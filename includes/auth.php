@@ -16,29 +16,5 @@ function requireManager() {
         die('Access denied. Manager privileges required.');
     }
 }
-// function hasProjectAccess($userId, $projectId, $minRole = 'member') {
-//     global $pdo;
-    
-//     // Admins have full access
-//     $stmt = $pdo->prepare("SELECT role FROM users WHERE id = ?");
-//     $stmt->execute([$userId]);
-//     $userRole = $stmt->fetchColumn();
-    
-//     if ($userRole === 'admin') {
-//         return true;
-//     }
 
-//     // Check project membership
-//     $stmt = $pdo->prepare("
-//         SELECT role FROM project_members 
-//         WHERE user_id = ? AND project_id = ?
-//     ");
-//     $stmt->execute([$userId, $projectId]);
-//     $role = $stmt->fetchColumn();
-    
-//     $roleHierarchy = ['member' => 1, 'owner' => 2];
-//     $requiredLevel = $roleHierarchy[$minRole] ?? 0;
-    
-//     return ($role && ($roleHierarchy[$role] >= $requiredLevel));
-// }
 ?>

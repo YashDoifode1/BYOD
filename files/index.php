@@ -344,7 +344,7 @@ try {
                                                 </div>
                                             </td>
                                             <td>
-                                                <a href="file.php?project_id=<?php echo $project['id']; ?>" class="btn btn-sm btn-outline-primary"><i class="fas fa-comments"></i> Documents</a>
+                                                <a href="manage.php?project_id=<?php echo $project['id']; ?>" class="btn btn-sm btn-outline-primary"><i class="fas fa-comments"></i> Documents</a>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>

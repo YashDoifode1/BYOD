@@ -61,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_user'])) {
         ]);
 
         $_SESSION['flash_message'] = "User created successfully";
-        header("Location: index.php");
+        // header("Location: index.php");
         exit();
     }
 }

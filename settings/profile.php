@@ -8,7 +8,6 @@
 session_start();
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/config.php';
-// require_once __DIR__ . '/../includes/header.php';
 
 // Check authentication
 if (!isLoggedIn()) {
@@ -114,9 +113,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->commit();
                 $update_success = true;
                 
-                // // Log activity
-                // audit_log($_SESSION['user_id'], 'profile_update', 'Updated profile information');
-                
             } catch (Exception $e) {
                 $pdo->rollBack();
                 $errors[] = $e->getMessage();
@@ -157,39 +153,40 @@ if (!isset($_SESSION['csrf_token'])) {
         .profile-header {
             background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
         }
-        .edit-btn {
-            transition: all 0.3s ease;
-        }
-        .edit-btn:hover {
-            transform: translateY(-2px);
-        }
         .profile-picture {
             border: 4px solid white;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
+        .security-badge {
+            background: linear-gradient(135deg, #4b5563 0%, #1f2937 100%);
+        }
+        .hover-scale {
+            transition: transform 0.2s ease-in-out;
+        }
+        .hover-scale:hover {
+            transform: scale(1.02);
+        }
     </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-50">
     <!-- Header -->
     <?php include __DIR__ . '/../includes/header.php'; ?>
     <?php include __DIR__ . '/../includes/sidebar.php'; ?>
     
-    <div class="container mx-auto px-4 py-8">
+    <div class="container mx-auto px-4 py-8 lg:ml-64">
         <!-- Success/Error Messages -->
         <?php if ($update_success): ?>
-            <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6 rounded">
-                <div class="flex items-center">
-                    <i class="fas fa-check-circle mr-2"></i>
-                    <p>Your profile has been updated successfully!</p>
-                </div>
+            <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6 rounded flex items-center">
+                <i class="fas fa-check-circle mr-2 text-lg"></i>
+                <p class="font-medium">Your profile has been updated successfully!</p>
             </div>
         <?php endif; ?>
         
         <?php if (!empty($errors)): ?>
             <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded">
                 <div class="flex items-center">
-                    <i class="fas fa-exclamation-circle mr-2"></i>
-                    <p><strong>Error:</strong> Please fix the following issues:</p>
+                    <i class="fas fa-exclamation-circle mr-2 text-lg"></i>
+                    <p class="font-medium">Error: Please fix the following issues:</p>
                 </div>
                 <ul class="mt-2 ml-6 list-disc">
                     <?php foreach ($errors as $error): ?>
@@ -199,116 +196,188 @@ if (!isset($_SESSION['csrf_token'])) {
             </div>
         <?php endif; ?>
         
-        <div class="max-w-4xl mx-auto">
-            <!-- Profile Header -->
-            <div class="profile-header text-white rounded-t-lg p-6 shadow">
-                <div class="flex flex-col md:flex-row items-center">
-                    <!-- Profile Picture -->
-                    <div class="relative mb-4 md:mb-0 md:mr-6">
-                        <img src="..\<?= htmlspecialchars($user['profile_picture'] ?? '../assets/default-profile.png') ?>" 
-                             alt="Profile Picture" 
-                             class="profile-picture w-32 h-32 rounded-full object-cover">
-                        <label for="profile-upload" class="absolute bottom-0 right-0 bg-blue-500 text-white rounded-full p-2 cursor-pointer hover:bg-blue-600">
-                            <i class="fas fa-camera"></i>
-                            <input type="file" id="profile-upload" name="profile_picture" class="hidden" form="profile-form">
-                        </label>
+        <div class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left Column - Profile Card -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- Profile Card -->
+                <div class="bg-white rounded-lg shadow-md overflow-hidden hover-scale">
+                    <div class="profile-header p-6 text-center">
+                        <div class="relative mx-auto w-32 h-32">
+                            <img src="../<?= htmlspecialchars($user['profile_picture'] ?? '../assets/default-profile.png') ?>" 
+                                 alt="Profile Picture" 
+                                 class="profile-picture w-full h-full rounded-full object-cover">
+                            <label for="profile-upload" class="absolute bottom-0 right-0 bg-blue-500 text-white rounded-full p-2 cursor-pointer hover:bg-blue-600 transition-colors">
+                                <i class="fas fa-camera text-sm"></i>
+                                <input type="file" id="profile-upload" name="profile_picture" class="hidden" form="profile-form">
+                            </label>
+                        </div>
+                        <h1 class="text-xl font-bold text-white mt-4"><?= htmlspecialchars($user['first_name'] . ' ' . $user['last_name']) ?></h1>
+                        <p class="text-blue-200"><?= htmlspecialchars($user['job_title'] ?? 'Cybersecurity Professional') ?></p>
                     </div>
                     
-                    <!-- User Info -->
-                    <div class="text-center md:text-left">
-                        <h1 class="text-2xl font-bold"><?= htmlspecialchars($user['first_name'] . ' ' . $user['last_name']) ?></h1>
-                        <p class="text-blue-200"><?= htmlspecialchars($user['job_title'] ?? 'Cybersecurity Professional') ?></p>
-                        <p class="mt-2">
-                            <i class="fas fa-building mr-2"></i>
-                            <?= htmlspecialchars($user['company_name'] ?? 'No company specified') ?>
-                        </p>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div>
+                                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</h3>
+                                <p class="mt-1 text-sm text-gray-600">
+                                    <i class="fas fa-envelope mr-2 text-blue-500"></i>
+                                    <?= htmlspecialchars($user['email']) ?>
+                                </p>
+                                <?php if (!empty($user['phone'])): ?>
+                                <p class="mt-1 text-sm text-gray-600">
+                                    <i class="fas fa-phone mr-2 text-blue-500"></i>
+                                    <?= htmlspecialchars($user['phone']) ?>
+                                </p>
+                                <?php endif; ?>
+                            </div>
+                            
+                            <div>
+                                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Organization</h3>
+                                <p class="mt-1 text-sm text-gray-600">
+                                    <i class="fas fa-building mr-2 text-blue-500"></i>
+                                    <?= htmlspecialchars($user['company_name'] ?? 'Not specified') ?>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Security Settings Card -->
+                <div class="bg-white rounded-lg shadow-md overflow-hidden hover-scale">
+                    <div class="security-badge px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-lg font-semibold text-white">
+                            <i class="fas fa-shield-alt mr-2"></i>Security Settings
+                        </h2>
+                    </div>
+                    
+                    <div class="p-6 space-y-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-sm font-medium text-gray-700">Two-Factor Authentication</h3>
+                                <p class="text-xs text-gray-500">Enhanced account security</p>
+                            </div>
+                            <a href="..\enable_2fa.php" class="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                <?= (empty($user['2fa_secret']) ? 'Enable' : 'Manage') ?>
+                            </a>
+                        </div>
+                        
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-sm font-medium text-gray-700">Password</h3>
+                                <p class="text-xs text-gray-500">Last changed <?= !empty($user['password_changed_at']) ? date('M j, Y', strtotime($user['password_changed_at'])) : 'unknown' ?></p>
+                            </div>
+                            <a href="..\forgot-password.php" class="inline-flex items-center px-3 py-1 border border-gray-300 text-xs font-medium rounded shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                Reset
+                            </a>
+                        </div>
+                        
+                        <div class="pt-4 border-t border-gray-200">
+                            <h3 class="text-sm font-medium text-gray-700">Active Sessions</h3>
+                            <p class="text-xs text-gray-500 mt-1">
+                                <i class="fas fa-circle text-green-500 mr-1"></i>
+                                <!-- Current session active since <?= date('M j, g:i a', strtotime($_SESSION['login_time'])) ?> -->
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
             
-            <!-- Profile Form -->
-            <div class="bg-white rounded-b-lg shadow p-6">
-                <form id="profile-form" method="post" enctype="multipart/form-data" class="space-y-6">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+            <!-- Right Column - Profile Form -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                    <div class="border-b border-gray-200 px-6 py-4">
+                        <h2 class="text-lg font-semibold text-gray-800">
+                            <i class="fas fa-user-edit mr-2 text-blue-500"></i>
+                            Edit Profile Information
+                        </h2>
+                    </div>
                     
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <!-- Personal Information -->
-                        <div class="space-y-4">
-                            <h2 class="text-lg font-semibold text-gray-800 border-b pb-2">
-                                <i class="fas fa-user-circle mr-2 text-blue-600"></i>
-                                Personal Information
-                            </h2>
-                            
-                            <div>
-                                <label for="first_name" class="block text-sm font-medium text-gray-700">First Name</label>
-                                <input type="text" id="first_name" name="first_name" value="<?= htmlspecialchars($user['first_name'] ?? '') ?>" 
-                                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <form id="profile-form" method="post" enctype="multipart/form-data" class="p-6 space-y-6">
+                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <!-- Personal Information -->
+                            <div class="space-y-4">
+                                <h3 class="text-md font-medium text-gray-700 border-b pb-2">
+                                    Personal Details
+                                </h3>
+                                
+                                <div>
+                                    <label for="first_name" class="block text-sm font-medium text-gray-700">First Name *</label>
+                                    <input type="text" id="first_name" name="first_name" value="<?= htmlspecialchars($user['first_name'] ?? '') ?>" required
+                                           class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                
+                                <div>
+                                    <label for="last_name" class="block text-sm font-medium text-gray-700">Last Name *</label>
+                                    <input type="text" id="last_name" name="last_name" value="<?= htmlspecialchars($user['last_name'] ?? '') ?>" required
+                                           class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                
+                                <div>
+                                    <label for="email" class="block text-sm font-medium text-gray-700">Email *</label>
+                                    <input type="email" id="email" name="email" value="<?= htmlspecialchars($user['email'] ?? '') ?>" required
+                                           class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                
+                                <div>
+                                    <label for="phone" class="block text-sm font-medium text-gray-700">Phone</label>
+                                    <input type="text" id="phone" name="phone" value="<?= htmlspecialchars($user['phone'] ?? '') ?>" 
+                                           class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                                    <p class="mt-1 text-xs text-gray-500">Format: +1234567890</p>
+                                </div>
                             </div>
                             
-                            <div>
-                                <label for="last_name" class="block text-sm font-medium text-gray-700">Last Name</label>
-                                <input type="text" id="last_name" name="last_name" value="<?= htmlspecialchars($user['last_name'] ?? '') ?>" 
-                                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                            </div>
-                            
-                            <div>
-                                <label for="email" class="block text-sm font-medium text-gray-700">Email Address</label>
-                                <input type="email" id="email" name="email" value="<?= htmlspecialchars($user['email'] ?? '') ?>" 
-                                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                            </div>
-                            
-                            <div>
-                                <label for="phone" class="block text-sm font-medium text-gray-700">Phone Number</label>
-                                <input type="text" id="phone" name="phone" value="<?= htmlspecialchars($user['phone'] ?? '') ?>" 
-                                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                            <!-- Professional Information -->
+                            <div class="space-y-4">
+                                <h3 class="text-md font-medium text-gray-700 border-b pb-2">
+                                    Professional Information
+                                </h3>
+                                
+                                <div>
+                                    <label for="company_name" class="block text-sm font-medium text-gray-700">Company</label>
+                                    <input type="text" id="company_name" name="company_name" value="<?= htmlspecialchars($user['company_name'] ?? '') ?>" 
+                                           class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                
+                                <div>
+                                    <label for="job_title" class="block text-sm font-medium text-gray-700">Job Title</label>
+                                    <input type="text" id="job_title" name="job_title" value="<?= htmlspecialchars($user['job_title'] ?? '') ?>" 
+                                           class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                
+                                <div>
+                                    <label for="address" class="block text-sm font-medium text-gray-700">Address</label>
+                                    <textarea id="address" name="address" rows="2" 
+                                              class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"><?= htmlspecialchars($user['address'] ?? '') ?></textarea>
+                                </div>
                             </div>
                         </div>
                         
-                        <!-- Professional Information -->
-                        <div class="space-y-4">
-                            <h2 class="text-lg font-semibold text-gray-800 border-b pb-2">
-                                <i class="fas fa-briefcase mr-2 text-blue-600"></i>
-                                Professional Information
-                            </h2>
-                            
-                            <div>
-                                <label for="company_name" class="block text-sm font-medium text-gray-700">Company Name</label>
-                                <input type="text" id="company_name" name="company_name" value="<?= htmlspecialchars($user['company_name'] ?? '') ?>" 
-                                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <!-- Bio Section -->
+                        <div>
+                            <label for="bio" class="block text-sm font-medium text-gray-700">Professional Bio</label>
+                            <textarea id="bio" name="bio" rows="4" 
+                                      class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"><?= htmlspecialchars($user['bio'] ?? '') ?></textarea>
+                            <p class="mt-1 text-xs text-gray-500">Brief description about yourself and your expertise (max 500 characters).</p>
+                        </div>
+                        
+                        <!-- Form Actions -->
+                        <div class="flex justify-between items-center pt-6 border-t">
+                            <div class="text-sm text-gray-500">
+                                Last updated: <?= !empty($user['updated_at']) ? date('F j, Y \a\t g:i a', strtotime($user['updated_at'])) : 'Never' ?>
                             </div>
-                            
-                            <div>
-                                <label for="job_title" class="block text-sm font-medium text-gray-700">Job Title</label>
-                                <input type="text" id="job_title" name="job_title" value="<?= htmlspecialchars($user['job_title'] ?? '') ?>" 
-                                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                            </div>
-                            
-                            <div>
-                                <label for="address" class="block text-sm font-medium text-gray-700">Address</label>
-                                <textarea id="address" name="address" rows="2" 
-                                          class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"><?= htmlspecialchars($user['address'] ?? '') ?></textarea>
+                            <div class="flex space-x-3">
+                                <a href="..\dashboard.php" class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                    <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
+                                </a>
+                                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                    <i class="fas fa-save mr-2"></i> Save Changes
+                                </button>
                             </div>
                         </div>
-                    </div>
-                    
-                    <!-- Bio Section -->
-                    <div>
-                        <label for="bio" class="block text-sm font-medium text-gray-700">Professional Bio</label>
-                        <textarea id="bio" name="bio" rows="4" 
-                                  class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"><?= htmlspecialchars($user['bio'] ?? '') ?></textarea>
-                        <p class="mt-2 text-sm text-gray-500">Brief description about yourself and your expertise.</p>
-                    </div>
-                    
-                    <!-- Form Actions -->
-                    <div class="flex justify-end space-x-4 pt-4 border-t">
-                        <a href="dashboard.php" class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                            <i class="fas fa-times mr-2"></i> Cancel
-                        </a>
-                        <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                            <i class="fas fa-save mr-2"></i> Save Changes
-                        </button>
-                    </div>
-                </form>
+                    </form>
+                </div>
             </div>
         </div>
     </div>

@@ -448,7 +448,7 @@ function format_file_size($bytes) {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const fileId = link.getAttribute('data-file-id');
-                fileIframe.src = `view_file.php?file_id=${fileId}&csrf_token=<?= $_SESSION['csrf_token'] ?>`;
+                fileIframe.src = `view_file2.php?file_id=${fileId}&csrf_token=<?= $_SESSION['csrf_token'] ?>`;
                 fileViewerModal.style.display = 'block';
             });
         });
