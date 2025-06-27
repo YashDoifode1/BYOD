@@ -435,7 +435,150 @@ function parseUserAgent($ua) {
                     </form>
                 </div>
                 
-              
+                Device Management Section
+                <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                    <div class="border-b border-gray-200 px-6 py-4">
+                        <h2 class="text-lg font-semibold text-gray-800">
+                            <i class="fas fa-laptop mr-2 text-blue-500"></i>
+                            Device Management
+                        </h2>
+                        <p class="text-sm text-gray-500 mt-1">Manage trusted devices and active sessions</p>
+                    </div>
+                    
+                    <div class="p-6">
+                        <!-- Active Sessions -->
+                        <div class="mb-8">
+                            <h3 class="text-md font-medium text-gray-700 border-b pb-2 mb-4">
+                                Active Sessions (<?= count($active_sessions) ?>)
+                            </h3>
+                            
+                            <?php if (empty($active_sessions)): ?>
+                                <p class="text-sm text-gray-500">No active sessions found.</p>
+                            <?php else: ?>
+                                <div class="space-y-4">
+                                    <?php foreach ($active_sessions as $session): ?>
+                                        <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                                            <div class="flex items-start justify-between">
+                                                <div>
+                                                    <div class="flex items-center">
+                                                        <?php if ($session['session_id'] === session_id()): ?>
+                                                            <span class="inline-block w-3 h-3 rounded-full bg-green-500 mr-2"></span>
+                                                            <span class="font-medium text-gray-800">Current Session</span>
+                                                        <?php else: ?>
+                                                            <span class="inline-block w-3 h-3 rounded-full bg-blue-500 mr-2"></span>
+                                                            <span class="font-medium text-gray-800">Active Session</span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                    <p class="text-sm text-gray-600 mt-1">
+                                                        <i class="fas fa-globe mr-1"></i> <?= htmlspecialchars($session['ip_address'] ?? 'Unknown IP') ?>
+                                                    </p>
+                                                    <p class="text-sm text-gray-600">
+                                                        <i class="fas fa-desktop mr-1"></i> <?= htmlspecialchars(parseUserAgent($session['device_user_agent'])) ?>
+                                                    </p>
+                                                    <p class="text-xs text-gray-500 mt-1">
+                                                        Last activity: <?= date('M j, g:i a', strtotime($session['last_activity'])) ?>
+                                                    </p>
+                                                </div>
+                                                <?php if ($session['session_id'] !== session_id()): ?>
+                                                    <form method="post" action="../includes/revoke_session.php">
+                                                        <input type="hidden" name="session_id" value="<?= htmlspecialchars($session['session_id']) ?>">
+                                                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                                                        <button type="submit" class="text-xs text-red-600 hover:text-red-800">
+                                                            <i class="fas fa-sign-out-alt mr-1"></i> Revoke
+                                                        </button>
+                                                    </form>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <!-- Trusted Devices -->
+                        <div>
+                            <h3 class="text-md font-medium text-gray-700 border-b pb-2 mb-4">
+                                Trusted Devices (<?= count($devices) ?>)
+                            </h3>
+                            
+                            <?php if (empty($devices)): ?>
+                                <p class="text-sm text-gray-500">No trusted devices found.</p>
+                            <?php else: ?>
+                                <div class="overflow-x-auto">
+                                    <table class="min-w-full divide-y divide-gray-200">
+                                        <thead class="bg-gray-50">
+                                            <tr>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device</th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Used</th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="bg-white divide-y divide-gray-200">
+                                            <?php foreach ($devices as $device): ?>
+                                                <tr>
+                                                    <td class="px-6 py-4 whitespace-nowrap">
+                                                        <div class="flex items-center">
+                                                            <div class="flex-shrink-0 h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                                                                <i class="fas fa-laptop text-gray-500"></i>
+                                                            </div>
+                                                            <div class="ml-4">
+                                                                <div class="text-sm font-medium text-gray-900"><?= htmlspecialchars(parseUserAgent($device['user_agent'])) ?></div>
+                                                                <div class="text-sm text-gray-500"><?= substr(htmlspecialchars($device['fingerprint']), 0, 8) ?>...</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap">
+                                                        <div class="text-sm text-gray-900"><?= htmlspecialchars($device['ip_address']) ?></div>
+                                                        <?php if (!empty($device['ip_status'])): ?>
+                                                            <div class="text-xs text-gray-500"><?= htmlspecialchars($device['ip_status']) ?> (Score: <?= (int)$device['ip_score'] ?>)</div>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap">
+                                                        <?php 
+                                                        $badge_class = '';
+                                                        if ($device['trust_status'] === 'trusted') {
+                                                            $badge_class = 'trusted-badge';
+                                                        } elseif ($device['trust_status'] === 'untrusted') {
+                                                            $badge_class = 'untrusted-badge';
+                                                        } else {
+                                                            $badge_class = 'pending-badge';
+                                                        }
+                                                        ?>
+                                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white <?= $badge_class ?>">
+                                                            <?= ucfirst($device['trust_status']) ?>
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        <?= date('M j, Y', strtotime($device['last_used'])) ?>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                        <form method="post" action="../includes/manage_device.php" class="inline">
+                                                            <input type="hidden" name="device_id" value="<?= $device['id'] ?>">
+                                                            <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                                                            <?php if ($device['trust_status'] !== 'trusted'): ?>
+                                                                <button type="submit" name="action" value="trust" class="text-green-600 hover:text-green-900 mr-3">Trust</button>
+                                                            <?php endif; ?>
+                                                            <?php if ($device['trust_status'] !== 'untrusted'): ?>
+                                                                <button type="submit" name="action" value="untrust" class="text-yellow-600 hover:text-yellow-900 mr-3">Untrust</button>
+                                                            <?php endif; ?>
+                                                            <button type="submit" name="action" value="remove" class="text-red-600 hover:text-red-900">Remove</button>
+                                                        </form>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Preview profile picture before upload
         document.getElementById('profile-upload').addEventListener('change', function(e) {

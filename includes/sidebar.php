@@ -1,4 +1,5 @@
 <?php ob_start();?>
+<?php require_once  'validate.php'; ?>
 <div class="col-md-3 col-lg-2 d-md-block sidebar collapse" style="background: linear-gradient(180deg, #1a252f 0%, #2d3e50 100%); min-height: 100vh;">
     <div class="sidebar-sticky pt-4 px-3">
         <!-- User Profile Section -->
@@ -64,6 +65,13 @@
                    href="<?= APP_URL ?>/settings/profile.php" style="transition: all 0.3s;">
                     <i class="fas fa-cog me-3"></i>
                     <span>Settings</span>
+                </a>
+            </li>
+             <li class="nav-item">
+                <a class="nav-link d-flex align-items-center text-white py-2 px-3 rounded <?= strpos($_SERVER['REQUEST_URI'], '/device/') !== false ? 'active' : '' ?>" 
+                   href="<?= APP_URL ?>/device/index.php" style="transition: all 0.3s;">
+                    <i class="fa-solid fa-computer-classic"></i>
+                    <span>Device Management</span>
                 </a>
             </li>
             <li class="nav-item">

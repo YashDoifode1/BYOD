@@ -2,9 +2,11 @@
 session_start();
 require_once 'includes/config.php';
 require_once 'includes/auth.php';
+require_once 'includes/functions.php';
 require_once 'Database.php';
 require_once 'Mailer.php';
 require_once 'TwoFactorAuth.php';
+require_once 'includes/DeviceManager.php';
 
 // Redirect if already logged in
 if (isLoggedIn()) {
@@ -16,6 +18,7 @@ if (isLoggedIn()) {
 $db = new Database();
 $mailer = new Mailer();
 $twoFactorAuth = new TwoFactorAuth();
+$deviceManager = new DeviceManager($db);
 
 // Handle login
 $errors = [];
@@ -34,13 +37,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $db->getUserByEmail($email);
 
         if ($user && password_verify($password, $user['password_hash'])) {
+            // Generate device fingerprint
+            $deviceFingerprint = $deviceManager->generateDeviceFingerprint();
+            $isTrustedDevice = $deviceManager->isTrustedDevice($user['id'], $deviceFingerprint);
+            
+            // Check device risk level
+            $riskLevel = $deviceManager->assessDeviceRisk($deviceFingerprint, $user['id']);
+            
             // Update last login time
             $db->updateLastLogin($user['id']);
             
-            // Check if 2FA is enabled
-            if (!empty($user['two_factor_secret'])) {
+            // Check if 2FA is required (either enabled by user or forced by risk level)
+            $require2FA = !empty($user['two_factor_secret']) || $riskLevel === 'high';
+            
+            if ($require2FA) {
                 // Store user data in session for 2FA verification
                 $_SESSION['2fa_user'] = $user;
+                $_SESSION['2fa_device_fingerprint'] = $deviceFingerprint;
+                $_SESSION['2fa_remember'] = $remember;
+                $_SESSION['2fa_risk_level'] = $riskLevel;
                 
                 // Generate both TOTP and email codes
                 $emailCode = rand(100000, 999999); // 6-digit code
@@ -50,11 +65,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Send email with code
                 $mailer->send2FACode($user['email'], $user['first_name'], $emailCode);
                 
+                // Log 2FA initiation
+                $db->logActivity(
+                    $user['id'],
+                    '2fa_initiated',
+                    '2FA initiated for login from ' . ($riskLevel === 'high' ? 'high-risk' : 'medium-risk') . ' device',
+                    $_SERVER['REMOTE_ADDR'],
+                    $_SERVER['HTTP_USER_AGENT'] ?? '',
+                    $deviceFingerprint
+                );
+                
                 // Redirect to 2FA verification
                 header('Location: verify-2fa.php');
                 exit();
             } else {
-                // Set complete session variables
+                // Register device if not already registered
+                if (!$isTrustedDevice) {
+                    $deviceManager->registerDevice($user['id'], $deviceFingerprint);
+                }
+                
+                // Set session variables with device context
                 $_SESSION['user'] = [
                     'user_id' => $user['id'],
                     'id' => $user['id'],
@@ -63,36 +93,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'user_role' => $user['role'],
                     'role' => $user['role'],
                     'first_name' => $user['first_name'],
-                    'last_name' => $user['last_name']
+                    'last_name' => $user['last_name'],
+                    'device_fingerprint' => $deviceFingerprint,
+                    'device_trusted' => $isTrustedDevice,
+                    'last_login' => time()
                 ];
+                
+                // Set standard session vars for backward compatibility
                 $_SESSION['id'] = $user['id'];
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['username'] = $user['username'];
                 $_SESSION['email'] = $user['email'];
                 $_SESSION['role'] = $user['role'];
                 $_SESSION['user_role'] = $user['role'];
+                $_SESSION['login_time'] = time();
 
                 // Set remember me cookie if selected
                 if ($remember) {
                     $token = bin2hex(random_bytes(32));
                     $expiry = time() + 60 * 60 * 24 * 30; // 30 days
-                    setcookie('remember_token', $token, $expiry, '/', '', true, true);
                     
-                    // Store token in database
+                    // Secure cookie settings
+                    setcookie('remember_token', $token, [
+                        'expires' => $expiry,
+                        'path' => '/',
+                        'domain' => parse_url(SITE_URL, PHP_URL_HOST),
+                        'secure' => true,
+                        'httponly' => true,
+                        'samesite' => 'Strict'
+                    ]);
+                    
+                    // Store token in database with device context
                     $db->query(
-                        "INSERT INTO auth_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
-                        [$user['id'], hash('sha256', $token), date('Y-m-d H:i:s', $expiry)]
+                        "INSERT INTO auth_tokens (user_id, token, device_fingerprint, expires_at) 
+                         VALUES (?, ?, ?, ?)",
+                        [$user['id'], hash('sha256', $token), $deviceFingerprint, date('Y-m-d H:i:s', $expiry)]
                     );
                 }
 
-                // Log the login activity
+                // Log the successful login
                 $db->logActivity(
                     $user['id'],
                     'login',
-                    'User logged in',
+                    'User logged in from ' . ($isTrustedDevice ? 'trusted device' : 'new device'),
                     $_SERVER['REMOTE_ADDR'],
-                    $_SERVER['HTTP_USER_AGENT'] ?? ''
+                    $_SERVER['HTTP_USER_AGENT'] ?? '',
+                    $deviceFingerprint
                 );
+                
+                // Set device context cookie for subsequent requests
+                setcookie('device_context', $deviceFingerprint, [
+                    'expires' => time() + 60 * 60 * 24 * 90, // 90 days
+                    'path' => '/',
+                    'domain' => parse_url(SITE_URL, PHP_URL_HOST),
+                    'secure' => true,
+                    'httponly' => false, // Needs to be readable by JS
+                    'samesite' => 'Lax'
+                ]);
                 
                 // Redirect to dashboard
                 header('Location: dashboard.php');
@@ -101,16 +158,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $errors[] = "Invalid email or password.";
             
+            // Generate device fingerprint for failed attempt
+            $deviceFingerprint = $deviceManager->generateDeviceFingerprint();
+            
             // Log failed login attempt
             $db->logActivity(
                 null,
                 'failed_login',
                 'Failed login attempt for email: ' . $email,
                 $_SERVER['REMOTE_ADDR'],
-                $_SERVER['HTTP_USER_AGENT'] ?? ''
+                $_SERVER['HTTP_USER_AGENT'] ?? '',
+                $deviceFingerprint
             );
+            
+            // Implement progressive delay for failed attempts
+            sleep(min(countFailedAttempts($email), 5)); // Max 5 second delay
         }
     }
+}
+
+// Helper function to count recent failed attempts
+function countFailedAttempts(string $email): int {
+    global $db;
+    $oneHourAgo = date('Y-m-d H:i:s', time() - 3600);
+    return $db->query(
+        "SELECT COUNT(*) FROM activity_logs 
+         WHERE description LIKE ? 
+         AND created_at > ?",
+        ["Failed login attempt for email: $email%", $oneHourAgo]
+    )->fetchColumn();
 }
 ?>
 
@@ -277,6 +353,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-weight: 500;
             text-decoration: none;
         }
+        .security-badge {
+            font-size: 0.8rem;
+            color: #28a745;
+            margin-top: 1rem;
+            text-align: center;
+        }
+        .security-badge i {
+            margin-right: 5px;
+        }
     </style>
 </head>
 <body>
@@ -295,7 +380,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         <?php endif; ?>
         
-        <form action="login.php" method="POST" autocomplete="off">
+        <form action="login.php" method="POST" autocomplete="off" id="loginForm">
             <div class="mb-3">
                 <label for="email" class="form-label">Email Address</label>
                 <div class="input-group">
@@ -329,7 +414,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <i class="fas fa-sign-in-alt me-2"></i>Login
             </button>
             
-            <?php if (ALLOW_SOCIAL_LOGIN): ?>
+            <div class="security-badge">
+                <i class="fas fa-shield-alt"></i> Secure BYOD Login System
+            </div>
+            
+            <?php if (defined('ALLOW_SOCIAL_LOGIN') && ALLOW_SOCIAL_LOGIN): ?>
                 <div class="divider">OR</div>
                 <div class="social-login">
                     <a href="#" class="social-btn google-btn">
@@ -343,29 +432,177 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </a>
                 </div>
             <?php endif; ?>
-            
-           <?php if (defined('ALLOW_SOCIAL_LOGIN') && ALLOW_SOCIAL_LOGIN): ?>
-    <div class="divider">OR</div>
-    <div class="social-login">
-        <a href="#" class="social-btn google-btn">
-            <i class="fab fa-google"></i>
-        </a>
-        <a href="#" class="social-btn facebook-btn">
-            <i class="fab fa-facebook-f"></i>
-        </a>
-        <a href="#" class="social-btn twitter-btn">
-            <i class="fab fa-twitter"></i>
-        </a>
-    </div>
-<?php endif; ?>
         </form>
     </div>
 
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Simple animation on load
-        document.addEventListener('DOMContentLoaded', function() {
+        // Enhanced device fingerprint collection
+        async function collectDeviceInfo() {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            
+            // Get WebGL renderer info
+            let webglInfo = {};
+            if (gl) {
+                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                webglInfo = {
+                    vendor: gl.getParameter(debugInfo ? debugInfo.UNMASKED_VENDOR_WEBGL : gl.VENDOR),
+                    renderer: gl.getParameter(debugInfo ? debugInfo.UNMASKED_RENDERER_WEBGL : gl.RENDERER),
+                    parameters: {
+                        antialiasing: gl.getContextAttributes().antialias,
+                        depth: gl.getContextAttributes().depth,
+                        stencil: gl.getContextAttributes().stencil
+                    }
+                };
+            }
+
+            // Get audio context fingerprint
+            let audioContext = {};
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const analyser = audioCtx.createAnalyser();
+                const gainNode = audioCtx.createGain();
+                const scriptProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
+                
+                oscillator.type = 'triangle';
+                oscillator.connect(analyser);
+                analyser.connect(scriptProcessor);
+                scriptProcessor.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                oscillator.start(0);
+                
+                audioContext = {
+                    sampleRate: audioCtx.sampleRate,
+                    channelCount: audioCtx.destination.channelCount,
+                    maxChannelCount: audioCtx.destination.maxChannelCount || 'unknown'
+                };
+                
+                oscillator.stop();
+                audioCtx.close();
+            } catch (e) {
+                audioContext = { error: e.message };
+            }
+
+            // Get battery info if available
+            let batteryInfo = {};
+            if ('getBattery' in navigator) {
+                try {
+                    const battery = await navigator.getBattery();
+                    batteryInfo = {
+                        charging: battery.charging,
+                        chargingTime: battery.chargingTime,
+                        dischargingTime: battery.dischargingTime,
+                        level: battery.level
+                    };
+                } catch (e) {
+                    batteryInfo = { error: e.message };
+                }
+            }
+
+            // Get media devices
+            let mediaDevices = [];
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                mediaDevices = devices.map(d => ({
+                    kind: d.kind,
+                    type: d.type,
+                    groupId: d.groupId
+                }));
+            } catch (e) {
+                mediaDevices = [{ error: e.message }];
+            }
+
+            // Get storage info
+            let storageInfo = {};
+            if ('storage' in navigator) {
+                try {
+                    const storage = await navigator.storage.estimate();
+                    storageInfo = {
+                        quota: storage.quota,
+                        usage: storage.usage,
+                        usageDetails: storage.usageDetails || {}
+                    };
+                } catch (e) {
+                    storageInfo = { error: e.message };
+                }
+            }
+
+            // Get GPU info if available
+            let gpuInfo = {};
+            if ('gpu' in navigator) {
+                try {
+                    const gpu = await navigator.gpu.requestAdapter();
+                    if (gpu) {
+                        gpuInfo = {
+                            vendor: gpu.vendor,
+                            architecture: gpu.architecture,
+                            description: gpu.description
+                        };
+                    }
+                } catch (e) {
+                    gpuInfo = { error: e.message };
+                }
+            }
+
+            return {
+                screen: {
+                    width: screen.width,
+                    height: screen.height,
+                    colorDepth: screen.colorDepth,
+                    pixelRatio: window.devicePixelRatio || 1,
+                    orientation: window.screen.orientation ? window.screen.orientation.type : 'unknown'
+                },
+                navigator: {
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform,
+                    language: navigator.language,
+                    languages: navigator.languages,
+                    hardwareConcurrency: navigator.hardwareConcurrency || 'unknown',
+                    maxTouchPoints: navigator.maxTouchPoints || 0,
+                    deviceMemory: navigator.deviceMemory || 'unknown',
+                    cpuClass: navigator.cpuClass || 'unknown'
+                },
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                webgl: webglInfo,
+                fonts: (() => {
+                    try {
+                        return Array.from(new Set(document.fonts.values()).map(f => f.family));
+                    } catch (e) {
+                        return [];
+                    }
+                })(),
+                audioContext: audioContext,
+                batteryInfo: batteryInfo,
+                mediaDevices: mediaDevices,
+                storage: storageInfo,
+                gpuInfo: gpuInfo,
+                performance: {
+                    memory: window.performance?.memory ? {
+                        jsHeapSizeLimit: window.performance.memory.jsHeapSizeLimit,
+                        totalJSHeapSize: window.performance.memory.totalJSHeapSize,
+                        usedJSHeapSize: window.performance.memory.usedJSHeapSize
+                    } : null,
+                    timing: window.performance?.timing ? {
+                        navigationStart: window.performance.timing.navigationStart
+                    } : null
+                }
+            };
+        }
+
+        // Store device info in localStorage and add hidden field to form
+        document.addEventListener('DOMContentLoaded', async function() {
+            const deviceInfo = await collectDeviceInfo();
+            localStorage.setItem('deviceInfo', JSON.stringify(deviceInfo));
+            
+            // Set client timezone cookie
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            document.cookie = `client_timezone=${encodeURIComponent(timezone)}; path=/; max-age=${60*60*24*365}; SameSite=Lax`;
+            
+            // Simple animation on load
             const loginContainer = document.querySelector('.login-container');
             loginContainer.style.opacity = '0';
             loginContainer.style.transform = 'translateY(20px)';
@@ -378,6 +615,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Focus on email field by default
             document.getElementById('email').focus();
+            
+            // Add device info to form submission
+            const form = document.getElementById('loginForm');
+            form.addEventListener('submit', function() {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'device_info';
+                input.value = JSON.stringify(deviceInfo);
+                form.appendChild(input);
+            });
         });
     </script>
 </body>
