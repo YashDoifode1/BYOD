@@ -1,0 +1,9 @@
+Invoke-WebRequest : The response content cannot be parsed because the Internet Explorer engine is not available, or 
+Internet Explorer's first-launch configuration is not complete. Specify the UseBasicParsing parameter and try again. 
+At line:1 char:2
++ (Invoke-WebRequest -Uri 'http://localhost/Defsec/index.php' -Method P ...
++  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotImplemented: (:) [Invoke-WebRequest], NotSupportedException
+    + FullyQualifiedErrorId : WebCmdletIEDomNotSupportedException,Microsoft.PowerShell.Commands.InvokeWebRequestComman 
+   d
+ 

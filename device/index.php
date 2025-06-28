@@ -239,7 +239,8 @@ function getDeviceIcon($ua) {
                         <div>
                             <h3 class="text-sm font-medium text-gray-500">Device Fingerprint</h3>
                             <p class="mt-1 text-sm font-mono text-gray-800 break-all">
-                                <?= substr(htmlspecialchars($_SESSION['device_fingerprint'] ?? 'Not available'), 0, 24) ?>...
+                               <?= htmlspecialchars(substr($_SESSION['device_fingerprint'] ?? 'Not available', 0, 24)) ?>...
+
                             </p>
                         </div>
                         <div>

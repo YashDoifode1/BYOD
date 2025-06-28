@@ -3,6 +3,7 @@ require_once 'includes/config.php';
 require_once 'Database.php';
 define('ABUSEIPDB_API_KEY', '9dd9a70ede1f6328f3a520c80a304016789a485bf4cf27dd4ee9a90a480d9b419fb35361a020225a');
 define('IPQS_API_KEY', 'UIBQsNrKKJy9yOjGx4JLNPSJSE6XGxQy');
+
 class DeviceManager {
     private $db;
     private $deviceTTL = 7776000; // 90 days in seconds
@@ -17,49 +18,48 @@ class DeviceManager {
     }
 
     /**
-     * Generates a unique device fingerprint based on client information
+     * Generates a unique and consistent device fingerprint based on stable client information
      * @return string
      */
     public function generateDeviceFingerprint(): string {
         // Get device info from form submission and client
         $deviceInfo = json_decode($_POST['device_info'] ?? '{}', true);
-        
-        // Create a composite string of device characteristics (excluding IP)
+
+        // Use only stable characteristics for fingerprinting
         $fingerprintData = [
             'userAgent' => $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
             'timezone' => $_COOKIE['client_timezone'] ?? 'unknown',
             'screen' => [
-                'width' => $deviceInfo['screen']['width'] ?? 0,
-                'height' => $deviceInfo['screen']['height'] ?? 0,
-                'colorDepth' => $deviceInfo['screen']['colorDepth'] ?? 0,
-                'pixelRatio' => $deviceInfo['screen']['pixelRatio'] ?? 1
+                'width' => isset($deviceInfo['screen']['width']) ? (int)$deviceInfo['screen']['width'] : 0,
+                'height' => isset($deviceInfo['screen']['height']) ? (int)$deviceInfo['screen']['height'] : 0,
+                'colorDepth' => isset($deviceInfo['screen']['colorDepth']) ? (int)$deviceInfo['screen']['colorDepth'] : 0,
+                'pixelRatio' => isset($deviceInfo['screen']['pixelRatio']) ? (float)$deviceInfo['screen']['pixelRatio'] : 1.0
             ],
             'navigator' => [
                 'platform' => $deviceInfo['navigator']['platform'] ?? 'unknown',
                 'language' => $deviceInfo['navigator']['language'] ?? 'unknown',
-                'hardwareConcurrency' => $deviceInfo['navigator']['hardwareConcurrency'] ?? 'unknown',
-                'maxTouchPoints' => $deviceInfo['navigator']['maxTouchPoints'] ?? 0,
-                'deviceMemory' => $deviceInfo['navigator']['deviceMemory'] ?? 'unknown'
+                'hardwareConcurrency' => isset($deviceInfo['navigator']['hardwareConcurrency']) ? (int)$deviceInfo['navigator']['hardwareConcurrency'] : 0,
+                'maxTouchPoints' => isset($deviceInfo['navigator']['maxTouchPoints']) ? (int)$deviceInfo['navigator']['maxTouchPoints'] : 0,
+                'deviceMemory' => isset($deviceInfo['navigator']['deviceMemory']) ? (int)$deviceInfo['navigator']['deviceMemory'] : 0
             ],
-            'webgl' => $this->normalizeWebGLInfo($deviceInfo['webgl'] ?? []),
-            'fonts' => $deviceInfo['fonts'] ?? [],
-            'audioContext' => $deviceInfo['audioContext'] ?? [],
-            'cpuClass' => $deviceInfo['cpuClass'] ?? 'unknown',
-            'gpuInfo' => $deviceInfo['gpuInfo'] ?? [],
-            'batteryInfo' => $deviceInfo['batteryInfo'] ?? [],
-            'mediaDevices' => $deviceInfo['mediaDevices'] ?? [],
-            'storage' => $deviceInfo['storage'] ?? []
+            'webgl' => $this->normalizeWebGLInfo($deviceInfo['webgl'] ?? [])
         ];
 
-        // Sort arrays to ensure consistent ordering
-        if (isset($fingerprintData['fonts'])) {
-            sort($fingerprintData['fonts']);
-        }
-        if (isset($fingerprintData['mediaDevices'])) {
-            sort($fingerprintData['mediaDevices']);
+        // Normalize and sort data to ensure consistency
+        ksort($fingerprintData);
+        foreach (['screen', 'navigator', 'webgl'] as $key) {
+            if (is_array($fingerprintData[$key])) {
+                ksort($fingerprintData[$key]);
+            }
         }
 
-        return hash('sha256', json_encode($fingerprintData));
+        // Generate a stable hash
+        $hash = hash('sha256', json_encode($fingerprintData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+
+        // Store only the hash in session
+        $_SESSION['device_fingerprint'] = $hash;
+
+        return $hash;
     }
 
     /**
@@ -68,13 +68,14 @@ class DeviceManager {
     private function normalizeWebGLInfo(array $webglInfo): array {
         if (empty($webglInfo)) return [];
         
-        return [
+        $normalized = [
             'vendor' => $webglInfo['vendor'] ?? 'unknown',
             'renderer' => $webglInfo['renderer'] ?? 'unknown',
             'unmaskedVendor' => $webglInfo['unmaskedVendor'] ?? 'unknown',
-            'unmaskedRenderer' => $webglInfo['unmaskedRenderer'] ?? 'unknown',
-            'parameters' => $webglInfo['parameters'] ?? []
+            'unmaskedRenderer' => $webglInfo['unmaskedRenderer'] ?? 'unknown'
         ];
+        ksort($normalized);
+        return $normalized;
     }
 
     /**
@@ -106,6 +107,9 @@ class DeviceManager {
      * @return bool
      */
     public function registerDevice(int $userId, string $deviceFingerprint): bool {
+        // Get client IP address
+        $ipAddress = $this->getClientIp();
+        
         // Check if user has exceeded maximum devices
         $deviceCount = $this->getDeviceCount($userId);
         if ($deviceCount >= $this->maxDevicesPerUser) {
@@ -121,24 +125,30 @@ class DeviceManager {
         if ($existing) {
             // Update existing device
             $query = "UPDATE device_fingerprints 
-                     SET user_id = ?, user_agent = ?, last_used = NOW() 
+                     SET user_id = ?, user_agent = ?, ip_address = ?, last_used = NOW() 
                      WHERE fingerprint = ?";
             return $this->db->query($query, [
                 $userId,
                 $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
+                $ipAddress,
                 $deviceFingerprint
             ])->rowCount() > 0;
         }
 
+        // Check IP reputation
+        $ipReputation = $this->checkIpReputation($ipAddress);
+        
         // Insert new device fingerprint
         $query = "INSERT INTO device_fingerprints (
-                    user_id, fingerprint, user_agent, trust_status, last_used
-                  ) VALUES (?, ?, ?, 'pending', NOW())";
+                    user_id, fingerprint, user_agent, ip_address, ip_reputation, trust_status, last_used
+                  ) VALUES (?, ?, ?, ?, ?, 'pending', NOW())";
         
         $result = $this->db->query($query, [
             $userId,
             $deviceFingerprint,
-            $_SERVER['HTTP_USER_AGENT'] ?? 'unknown'
+            $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
+            $ipAddress,
+            $ipReputation['status']
         ])->rowCount() > 0;
 
         if ($result) { 
@@ -150,8 +160,8 @@ class DeviceManager {
 
             // Insert new session
             $sessionQuery = "INSERT INTO sessions (
-                session_id, user_id, user_agent, device_fingerprint_id, last_activity
-            ) VALUES (?, ?, ?, ?, NOW())";
+                session_id, user_id, user_agent, ip_address, device_fingerprint_id, last_activity
+            ) VALUES (?, ?, ?, ?, ?, NOW())";
 
             $sessionId = bin2hex(random_bytes(32));
 
@@ -167,6 +177,7 @@ class DeviceManager {
                 $sessionId,
                 $userId,
                 $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
+                $ipAddress,
                 $deviceFingerprintId
             ])->rowCount() > 0;
         }
@@ -189,21 +200,26 @@ class DeviceManager {
         // Get recent failed login attempts
         $failedAttempts = $this->getRecentFailedAttempts($userId);
         
-        // Get IP reputation (used for logging but not for fingerprinting)
-        $ipReputation = $this->checkIpReputation($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        // Get IP address and reputation
+        $ipAddress = $this->getClientIp();
+        $ipReputation = $this->checkIpReputation($ipAddress);
 
         // Simple risk scoring
         $riskScore = 0;
         $riskScore += $failedAttempts > 3 ? 40 : 0;
-        $riskScore += $ipReputation['status'] === 'suspicious' ? 20 : 0; // Lower weight since IP is less reliable
+        $riskScore += $ipReputation['status'] === 'suspicious' ? 20 : 0;
         $riskScore += $this->isUnusualUserAgent() ? 20 : 0;
         $riskScore += $this->isUnusualTime() ? 10 : 0;
         $riskScore += $this->hasInconsistentDeviceInfo() ? 30 : 0;
 
-        // Update device_fingerprints with risk score
+        // Update device_fingerprints with risk score and IP info
         $this->db->query(
-            "UPDATE device_fingerprints SET risk_score = ?, ip_reputation = ? WHERE fingerprint = ?",
-            [$riskScore, $ipReputation['status'], $deviceFingerprint]
+            "UPDATE device_fingerprints SET 
+                risk_score = ?, 
+                ip_reputation = ?,
+                ip_address = ?
+             WHERE fingerprint = ?",
+            [$riskScore, $ipReputation['status'], $ipAddress, $deviceFingerprint]
         );
 
         if ($riskScore >= 60) {
@@ -271,45 +287,65 @@ class DeviceManager {
     }
 
     /**
+     * Gets the client's IP address
+     * @return string
+     */
+    private function getClientIp(): string {
+        $ip = 'unknown';
+        
+        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
+            $ip = $_SERVER['HTTP_CLIENT_IP'];
+        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+        } elseif (!empty($_SERVER['REMOTE_ADDR'])) {
+            $ip = $_SERVER['REMOTE_ADDR'];
+        }
+        
+        // Handle multiple IPs in X_FORWARDED_FOR
+        if (strpos($ip, ',') !== false) {
+            $ips = explode(',', $ip);
+            $ip = trim($ips[0]);
+        }
+        
+        return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : 'unknown';
+    }
+
+    /**
      * Checks for inconsistent device information
      * @return bool
      */
-    /**
- * Checks for inconsistent device information
- * @return bool
- */
-private function hasInconsistentDeviceInfo(): bool {
-    $deviceInfo = json_decode($_POST['device_info'] ?? '{}', true);
-    
-    // Check for mismatches between user agent and platform
-    $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $platform = $deviceInfo['navigator']['platform'] ?? '';
-    
-    if (stripos($userAgent, 'Windows') !== false && stripos($platform, 'Win') === false) {
-        return true;
+    private function hasInconsistentDeviceInfo(): bool {
+        $deviceInfo = json_decode($_POST['device_info'] ?? '{}', true);
+        
+        // Check for mismatches between user agent and platform
+        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $platform = $deviceInfo['navigator']['platform'] ?? '';
+        
+        if (stripos($userAgent, 'Windows') !== false && stripos($platform, 'Win') === false) {
+            return true;
+        }
+        if (stripos($userAgent, 'Mac') !== false && stripos($platform, 'Mac') === false) {
+            return true;
+        }
+        if (stripos($userAgent, 'Linux') !== false && stripos($platform, 'Linux') === false) {
+            return true;
+        }
+        
+        // Check for unusual screen dimensions
+        $width = $deviceInfo['screen']['width'] ?? 0;
+        $height = $deviceInfo['screen']['height'] ?? 0;
+        if ($width <= 0 || $height <= 0 || $width > 10000 || $height > 10000) {
+            return true;
+        }
+        
+        // Check for suspicious WebGL renderer
+        $webglRenderer = $deviceInfo['webgl']['renderer'] ?? '';
+        if (strpos($webglRenderer, 'Google SwiftShader') !== false || strpos($webglRenderer, 'ANGLE') !== false) {
+            return true;
+        }
+        
+        return false;
     }
-    if (stripos($userAgent, 'Mac') !== false && stripos($platform, 'Mac') === false) {
-        return true;
-    }
-    if (stripos($userAgent, 'Linux') !== false && stripos($platform, 'Linux') === false) {
-        return true;
-    }
-    
-    // Check for unusual screen dimensions
-    $width = $deviceInfo['screen']['width'] ?? 0;
-    $height = $deviceInfo['screen']['height'] ?? 0;
-    if ($width <= 0 || $height <= 0 || $width > 10000 || $height > 10000) {
-        return true;
-    }
-    
-    // Check for suspicious WebGL renderer
-    $webglRenderer = $deviceInfo['webgl']['renderer'] ?? '';
-    if (strpos($webglRenderer, 'Google SwiftShader') !== false || strpos($webglRenderer, 'ANGLE') !== false) {
-        return true;
-    }
-    
-    return false;
-}
 
     /**
      * Gets the number of active devices for a user
@@ -388,9 +424,14 @@ private function hasInconsistentDeviceInfo(): bool {
      * @return bool
      */
     public function updateDeviceActivity(int $userId, string $deviceFingerprint): bool {
+        $ipAddress = $this->getClientIp();
+        $ipReputation = $this->checkIpReputation($ipAddress);
+        
         $query = "UPDATE device_fingerprints 
                  SET last_used = NOW(), 
                      user_agent = ?, 
+                     ip_address = ?,
+                     ip_reputation = ?,
                      risk_score = ? 
                  WHERE user_id = ? 
                  AND fingerprint = ?";
@@ -400,6 +441,8 @@ private function hasInconsistentDeviceInfo(): bool {
         
         return $this->db->query($query, [
             $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
+            $ipAddress,
+            $ipReputation['status'],
             $riskScore,
             $userId,
             $deviceFingerprint
@@ -426,7 +469,7 @@ private function hasInconsistentDeviceInfo(): bool {
      * @return array
      */
     public function getUserDevices(int $userId): array {
-        $query = "SELECT fingerprint, user_agent, trust_status, risk_score, last_used 
+        $query = "SELECT fingerprint, user_agent, ip_address, trust_status, risk_score, last_used 
                  FROM device_fingerprints 
                  WHERE user_id = ? 
                  AND last_used > DATE_SUB(NOW(), INTERVAL ? SECOND)";
@@ -462,7 +505,7 @@ private function hasInconsistentDeviceInfo(): bool {
             $userId,
             $action,
             $description,
-            $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+            $this->getClientIp(),
             $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
             $deviceFingerprint
         );

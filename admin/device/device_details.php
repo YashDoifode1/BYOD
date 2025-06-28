@@ -2,6 +2,11 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/config.php';
 
+function isAdmin(): bool {
+    // Adjust this check to match your session or user management system
+    return isset($_SESSION['role']) && $_SESSION['user_role'] === 'admin';
+}
+
 // Verify admin access
 if (!isAdmin()) {
     header('HTTP/1.0 403 Forbidden');

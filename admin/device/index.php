@@ -12,6 +12,40 @@ if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
+/**
+ * Logs an admin action to the activity_logs table
+ * @param int|null $userId The ID of the admin performing the action
+ * @param string $action The type of action performed
+ * @param string $description A description of the action
+ * @return bool Returns true on success, false on failure
+ */
+function logAdminAction(?int $userId, string $action, string $description): bool {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO activity_logs (
+                user_id, action, description, ip_address, user_agent, device_fingerprint, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+        ");
+        $ipAddress = $_SERVER['REMOTE_ADDR'] ?? NULL;
+        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? NULL;
+        $deviceFingerprint = $_SESSION['device_fingerprint'] ?? NULL;
+        
+        $stmt->execute([
+            $userId,
+            $action,
+            $description,
+            $ipAddress,
+            $userAgent,
+            $deviceFingerprint
+        ]);
+        return $stmt->rowCount() > 0;
+    } catch (PDOException $e) {
+        error_log("Error logging admin action: " . $e->getMessage());
+        return false;
+    }
+}
+
 // Handle actions
 $message = '';
 $error = '';
@@ -238,8 +272,6 @@ function getDeviceIcon($userAgent) {
 </head>
 <body class="bg-gray-50 font-sans antialiased">
     <!-- Admin Navigation -->
-  
-    
     <div class="flex">
         <!-- Sidebar -->
         <?php include __DIR__ . '/../includes/header.php'; ?>
@@ -427,118 +459,136 @@ function getDeviceIcon($userAgent) {
                     </div>
                     
                     <!-- Devices Table -->
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Network</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Activity</th>
-                                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                <?php foreach ($devices as $device): ?>
-                                <tr class="table-row">
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="flex items-center">
-                                            <div class="flex-shrink-0 h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                                                <i class="fas fa-user text-gray-500"></i>
-                                            </div>
-                                            <div class="ml-4">
-                                                <div class="text-sm font-medium text-gray-900">
-                                                    <?= htmlspecialchars($device['username']) ?>
-                                                </div>
-                                                <div class="text-xs text-gray-500">
-                                                    <?= htmlspecialchars($device['email']) ?>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="flex items-center">
-                                            <div class="flex-shrink-0 h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-                                                <i class="fas <?= getDeviceIcon($device['user_agent']) ?> text-gray-600"></i>
-                                            </div>
-                                            <div class="ml-4">
-                                                <div class="text-sm font-mono text-gray-900">
-                                                    <?= htmlspecialchars(substr($device['fingerprint'], 0, 8)) ?>...
-                                                </div>
-                                                <div class="text-xs text-gray-500 truncate" style="max-width: 200px;">
-                                                    <?= htmlspecialchars($device['user_agent']) ?>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900 font-mono">
-                                            <?= htmlspecialchars($device['ip_address']) ?>
-                                        </div>
-                                        <?php if (!empty($device['ip_status'])): ?>
-                                        <div class="text-xs text-gray-500">
-                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium 
-                                                <?= $device['ip_score'] > 50 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800' ?>">
-                                                <?= htmlspecialchars($device['ip_status']) ?> (<?= (int)$device['ip_score'] ?>)
-                                            </span>
-                                        </div>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                            <?= $device['trust_status'] === 'trusted' ? 'badge-trusted' : 
-                                               ($device['trust_status'] === 'pending' ? 'badge-pending' : 'badge-untrusted') ?>">
-                                            <?= ucfirst($device['trust_status']) ?>
-                                        </span>
-                                        <div class="text-xs text-gray-500 mt-1">
-                                            <?= $device['active_sessions'] ?> active session<?= $device['active_sessions'] != 1 ? 's' : '' ?>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">
-                                            <?= date('M j, Y', strtotime($device['last_used'])) ?>
-                                        </div>
-                                        <div class="text-xs text-gray-500">
-                                            <?= date('g:i A', strtotime($device['last_used'])) ?>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <div class="flex justify-end space-x-2">
-                                            <form method="post" class="inline">
-                                                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                                                <input type="hidden" name="device_id" value="<?= $device['id'] ?>">
-                                                <select name="trust_status" onchange="this.form.submit()" 
-                                                    class="text-xs rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 py-1 pr-7">
-                                                    <option value="trusted" <?= $device['trust_status'] === 'trusted' ? 'selected' : '' ?>>Trusted</option>
-                                                    <option value="pending" <?= $device['trust_status'] === 'pending' ? 'selected' : '' ?>>Pending</option>
-                                                    <option value="untrusted" <?= $device['trust_status'] === 'untrusted' ? 'selected' : '' ?>>Untrusted</option>
-                                                </select>
-                                                <input type="hidden" name="change_trust_status">
-                                            </form>
-                                            
-                                            <button onclick="openDeviceModal('<?= $device['id'] ?>')" 
-                                                class="text-blue-600 hover:text-blue-900 text-sm">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            
-                                            <form method="post" class="inline">
-                                                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                                                <input type="hidden" name="device_id" value="<?= $device['id'] ?>">
-                                                <button type="submit" name="revoke_device" 
-                                                    class="text-red-600 hover:text-red-900 text-sm"
-                                                    onclick="return confirm('Revoke all sessions for this device?')">
-                                                    <i class="fas fa-sign-out-alt"></i>
-                                                </button>
-                                            </form>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
+<div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Network</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Risk Score</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Reputation</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Activity</th>
+                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+            <?php foreach ($devices as $device): ?>
+            <tr class="table-row">
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                            <i class="fas fa-user text-gray-500"></i>
+                        </div>
+                        <div class="ml-4">
+                            <div class="text-sm font-medium text-gray-900">
+                                <?= htmlspecialchars($device['username']) ?>
+                            </div>
+                            <div class="text-xs text-gray-500">
+                                <?= htmlspecialchars($device['email']) ?>
+                            </div>
+                        </div>
                     </div>
-                    
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
+                            <i class="fas <?= getDeviceIcon($device['user_agent']) ?> text-gray-600"></i>
+                        </div>
+                        <div class="ml-4">
+                            <div class="text-sm font-mono text-gray-900">
+                                <?= htmlspecialchars(substr($device['fingerprint'], 0, 8)) ?>...
+                            </div>
+                            <div class="text-xs text-gray-500 truncate" style="max-width: 200px;">
+                                <?= htmlspecialchars($device['user_agent']) ?>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900 font-mono">
+                        <?= htmlspecialchars($device['ip_address']) ?>
+                    </div>
+                    <?php if (!empty($device['ip_status'])): ?>
+                    <div class="text-xs text-gray-500">
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium 
+                            <?= $device['ip_score'] > 50 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800' ?>">
+                            <?= htmlspecialchars($device['ip_status']) ?> (<?= (int)$device['ip_score'] ?>)
+                        </span>
+                    </div>
+                    <?php endif; ?>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">
+                        <?= htmlspecialchars($device['risk_score']) ?>
+                    </div>
+                    <div class="text-xs text-gray-500">
+                        <?php
+                        // Color-code risk score
+                        $risk_color = $device['risk_score'] > 80 ? 'text-red-600' : ($device['risk_score'] > 50 ? 'text-yellow-600' : 'text-green-600');
+                        ?>
+                        <span class="<?= $risk_color ?>">
+                            <?= $device['risk_score'] > 80 ? 'High' : ($device['risk_score'] > 50 ? 'Medium' : 'Low') ?>
+                        </span>
+                    </div>
+                </td>
+                <td class="px-6 py-4">
+                    <div class="text-sm text-gray-900 truncate" style="max-width: 200px;">
+                        <?= htmlspecialchars($device['ip_reputation']) ?>
+                    </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full 
+                        <?= $device['trust_status'] === 'trusted' ? 'badge-trusted' : 
+                           ($device['trust_status'] === 'pending' ? 'badge-pending' : 'badge-untrusted') ?>">
+                        <?= ucfirst($device['trust_status']) ?>
+                    </span>
+                    <div class="text-xs text-gray-500 mt-1">
+                        <?= $device['active_sessions'] ?> active session<?= $device['active_sessions'] != 1 ? 's' : '' ?>
+                    </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">
+                        <?= date('M j, Y', strtotime($device['last_used'])) ?>
+                    </div>
+                    <div class="text-xs text-gray-500">
+                        <?= date('g:i A', strtotime($device['last_used'])) ?>
+                    </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <div class="flex justify-end space-x-2">
+                        <form method="post" class="inline">
+                            <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                            <input type="hidden" name="device_id" value="<?= $device['id'] ?>">
+                            <select name="trust_status" onchange="this.form.submit()" 
+                                class="text-xs rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 py-1 pr-7">
+                                <option value="trusted" <?= $device['trust_status'] === 'trusted' ? 'selected' : '' ?>>Trusted</option>
+                                <option value="pending" <?= $device['trust_status'] === 'pending' ? 'selected' : '' ?>>Pending</option>
+                                <option value="untrusted" <?= $device['trust_status'] === 'untrusted' ? 'selected' : '' ?>>Untrusted</option>
+                            </select>
+                            <input type="hidden" name="change_trust_status">
+                        </form>
+                        <button onclick="openDeviceModal('<?= $device['id'] ?>')" 
+                            class="text-blue-600 hover:text-blue-900 text-sm">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <form method="post" class="inline">
+                            <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                            <input type="hidden" name="device_id" value="<?= $device['id'] ?>">
+                            <button type="submit" name="revoke_device" 
+                                class="text-red-600 hover:text-red-900 text-sm"
+                                onclick="return confirm('Revoke all sessions for this device?')">
+                                <i class="fas fa-sign-out-alt"></i>
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
                     <!-- Pagination -->
                     <div class="bg-gray-50 px-6 py-3 flex items-center justify-between border-t border-gray-200">
                         <div class="flex-1 flex justify-between sm:hidden">
@@ -691,9 +741,9 @@ function getDeviceIcon($userAgent) {
     <div id="deviceModal" class="fixed z-10 inset-0 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
         <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
             <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true"></span>
             <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
-                                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                     <div class="sm:flex sm:items-start">
                         <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
                             <i class="fas fa-laptop text-blue-600"></i>
@@ -797,7 +847,7 @@ function getDeviceIcon($userAgent) {
             modal.classList.remove('hidden');
             
             // Load device details via AJAX
-            axios.get(`/admin/api/device_details.php?id=${deviceId}`)
+            axios.get(`device_details.php?id=${deviceId}`)
                 .then(response => {
                     document.getElementById('deviceModalContent').innerHTML = response.data;
                 })
