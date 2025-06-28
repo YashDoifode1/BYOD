@@ -27,153 +27,155 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'];
     $remember = isset($_POST['remember']);
 
-    // Validate inputs
-    if (empty($email) || empty($password)) {
-        $errors[] = "Please fill in all fields.";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = "Please enter a valid email address.";
-    } else {
-        // Get user from database
-        $user = $db->getUserByEmail($email);
-
-        if ($user && password_verify($password, $user['password_hash'])) {
-            // Generate device fingerprint
-            $deviceFingerprint = $deviceManager->generateDeviceFingerprint();
-            $isTrustedDevice = $deviceManager->isTrustedDevice($user['id'], $deviceFingerprint);
-            
-            // Check device risk level
-            $riskLevel = $deviceManager->assessDeviceRisk($deviceFingerprint, $user['id']);
-            
-            // Update last login time
-            $db->updateLastLogin($user['id']);
-            
-            // Check if 2FA is required (either enabled by user or forced by risk level)
-            $require2FA = !empty($user['two_factor_secret']) || $riskLevel === 'high';
-            
-            if ($require2FA) {
-                // Store user data in session for 2FA verification
-                $_SESSION['2fa_user'] = $user;
-                $_SESSION['2fa_device_fingerprint'] = $deviceFingerprint;
-                $_SESSION['2fa_remember'] = $remember;
-                $_SESSION['2fa_risk_level'] = $riskLevel;
-                
-                // Generate both TOTP and email codes
-                $emailCode = rand(100000, 999999); // 6-digit code
-                $_SESSION['2fa_email_code'] = $emailCode;
-                $_SESSION['2fa_code_expires'] = time() + 600; // 10 minutes
-                
-                // Send email with code
-                $mailer->send2FACode($user['email'], $user['first_name'], $emailCode);
-                
-                // Log 2FA initiation
-                $db->logActivity(
-                    $user['id'],
-                    '2fa_initiated',
-                    '2FA initiated for login from ' . ($riskLevel === 'high' ? 'high-risk' : 'medium-risk') . ' device',
-                    $_SERVER['REMOTE_ADDR'],
-                    $_SERVER['HTTP_USER_AGENT'] ?? '',
-                    $deviceFingerprint
-                );
-                
-                // Redirect to 2FA verification
-                header('Location: verify-2fa.php');
-                exit();
-            } else {
-                // Register device if not already registered
-                if (!$isTrustedDevice) {
-                    $deviceManager->registerDevice($user['id'], $deviceFingerprint);
-                }
-                
-                // Set session variables with device context
-                $_SESSION['user'] = [
-                    'user_id' => $user['id'],
-                    'id' => $user['id'],
-                    'username' => $user['username'],
-                    'email' => $user['email'],
-                    'user_role' => $user['role'],
-                    'role' => $user['role'],
-                    'first_name' => $user['first_name'],
-                    'last_name' => $user['last_name'],
-                    'device_fingerprint' => $deviceFingerprint,
-                    'device_trusted' => $isTrustedDevice,
-                    'last_login' => time()
-                ];
-                
-                // Set standard session vars for backward compatibility
-                $_SESSION['id'] = $user['id'];
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['email'] = $user['email'];
-                $_SESSION['role'] = $user['role'];
-                $_SESSION['user_role'] = $user['role'];
-                $_SESSION['login_time'] = time();
-
-                // Set remember me cookie if selected
-                if ($remember) {
-                    $token = bin2hex(random_bytes(32));
-                    $expiry = time() + 60 * 60 * 24 * 30; // 30 days
-                    
-                    // Secure cookie settings
-                    setcookie('remember_token', $token, [
-                        'expires' => $expiry,
-                        'path' => '/',
-                        'domain' => parse_url(SITE_URL, PHP_URL_HOST),
-                        'secure' => true,
-                        'httponly' => true,
-                        'samesite' => 'Strict'
-                    ]);
-                    
-                    // Store token in database with device context
-                    $db->query(
-                        "INSERT INTO auth_tokens (user_id, token, device_fingerprint, expires_at) 
-                         VALUES (?, ?, ?, ?)",
-                        [$user['id'], hash('sha256', $token), $deviceFingerprint, date('Y-m-d H:i:s', $expiry)]
-                    );
-                }
-
-                // Log the successful login
-                $db->logActivity(
-                    $user['id'],
-                    'login',
-                    'User logged in from ' . ($isTrustedDevice ? 'trusted device' : 'new device'),
-                    $_SERVER['REMOTE_ADDR'],
-                    $_SERVER['HTTP_USER_AGENT'] ?? '',
-                    $deviceFingerprint
-                );
-                
-                // Set device context cookie for subsequent requests
-                setcookie('device_context', $deviceFingerprint, [
-                    'expires' => time() + 60 * 60 * 24 * 90, // 90 days
-                    'path' => '/',
-                    'domain' => parse_url(SITE_URL, PHP_URL_HOST),
-                    'secure' => true,
-                    'httponly' => false, // Needs to be readable by JS
-                    'samesite' => 'Lax'
-                ]);
-                
-                // Redirect to dashboard
-                header('Location: dashboard.php');
-                exit();
-            }
+    try {
+        // Generate device fingerprint (will throw DeviceBlockedException if untrusted)
+        $fingerprint = $deviceManager->generateDeviceFingerprint();
+        
+        // Validate inputs
+        if (empty($email) || empty($password)) {
+            $errors[] = "Please fill in all fields.";
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors[] = "Please enter a valid email address.";
         } else {
-            $errors[] = "Invalid email or password.";
-            
-            // Generate device fingerprint for failed attempt
-            $deviceFingerprint = $deviceManager->generateDeviceFingerprint();
-            
-            // Log failed login attempt
-            $db->logActivity(
-                null,
-                'failed_login',
-                'Failed login attempt for email: ' . $email,
-                $_SERVER['REMOTE_ADDR'],
-                $_SERVER['HTTP_USER_AGENT'] ?? '',
-                $deviceFingerprint
-            );
-            
-            // Implement progressive delay for failed attempts
-            sleep(min(countFailedAttempts($email), 5)); // Max 5 second delay
+            // Get user from database
+            $user = $db->getUserByEmail($email);
+
+            if ($user && password_verify($password, $user['password_hash'])) {
+                // Register device (will throw DeviceBlockedException if untrusted)
+                if ($deviceManager->registerDevice($user['id'], $fingerprint)) {
+                    // Check device risk level
+                    $riskLevel = $deviceManager->assessDeviceRisk($fingerprint, $user['id']);
+                    
+                    // Update last login time
+                    $db->updateLastLogin($user['id']);
+                    
+                    // Check if 2FA is required (either enabled by user or forced by risk level)
+                    $require2FA = !empty($user['two_factor_secret']) || $riskLevel === 'high';
+                    
+                    if ($require2FA) {
+                        // Store user data in session for 2FA verification
+                        $_SESSION['2fa_user'] = $user;
+                        $_SESSION['2fa_device_fingerprint'] = $fingerprint;
+                        $_SESSION['2fa_remember'] = $remember;
+                        $_SESSION['2fa_risk_level'] = $riskLevel;
+                        
+                        // Generate both TOTP and email codes
+                        $emailCode = rand(100000, 999999); // 6-digit code
+                        $_SESSION['2fa_email_code'] = $emailCode;
+                        $_SESSION['2fa_code_expires'] = time() + 600; // 10 minutes
+                        
+                        // Send email with code
+                        $mailer->send2FACode($user['email'], $user['first_name'], $emailCode);
+                        
+                        // Log 2FA initiation
+                        $db->logActivity(
+                            $user['id'],
+                            '2fa_initiated',
+                            '2FA initiated for login from ' . ($riskLevel === 'high' ? 'high-risk' : 'medium-risk') . ' device',
+                            $_SERVER['REMOTE_ADDR'],
+                            $_SERVER['HTTP_USER_AGENT'] ?? '',
+                            $fingerprint
+                        );
+                        
+                        // Redirect to 2FA verification
+                        header('Location: verify-2fa.php');
+                        exit();
+                    } else {
+                        // Set session variables with device context
+                        $_SESSION['user'] = [
+                            'user_id' => $user['id'],
+                            'id' => $user['id'],
+                            'username' => $user['username'],
+                            'email' => $user['email'],
+                            'user_role' => $user['role'],
+                            'role' => $user['role'],
+                            'first_name' => $user['first_name'],
+                            'last_name' => $user['last_name'],
+                            'device_fingerprint' => $fingerprint,
+                            'device_trusted' => true,
+                            'last_login' => time()
+                        ];
+                        
+                        // Set standard session vars for backward compatibility
+                        $_SESSION['id'] = $user['id'];
+                        $_SESSION['user_id'] = $user['id'];
+                        $_SESSION['username'] = $user['username'];
+                        $_SESSION['email'] = $user['email'];
+                        $_SESSION['role'] = $user['role'];
+                        $_SESSION['user_role'] = $user['role'];
+                        $_SESSION['login_time'] = time();
+
+                        // Set remember me cookie if selected
+                        if ($remember) {
+                            $token = bin2hex(random_bytes(32));
+                            $expiry = time() + 60 * 60 * 24 * 30; // 30 days
+                            
+                            // Secure cookie settings
+                            setcookie('remember_token', $token, [
+                                'expires' => $expiry,
+                                'path' => '/',
+                                'domain' => parse_url(SITE_URL, PHP_URL_HOST),
+                                'secure' => true,
+                                'httponly' => true,
+                                'samesite' => 'Strict'
+                            ]);
+                            
+                            // Store token in database with device context
+                            $db->query(
+                                "INSERT INTO auth_tokens (user_id, token, device_fingerprint, expires_at) 
+                                 VALUES (?, ?, ?, ?)",
+                                [$user['id'], hash('sha256', $token), $fingerprint, date('Y-m-d H:i:s', $expiry)]
+                            );
+                        }
+
+                        // Log the successful login
+                        $db->logActivity(
+                            $user['id'],
+                            'login',
+                            'User logged in from trusted device',
+                            $_SERVER['REMOTE_ADDR'],
+                            $_SERVER['HTTP_USER_AGENT'] ?? '',
+                            $fingerprint
+                        );
+                        
+                        // Set device context cookie for subsequent requests
+                        setcookie('device_context', $fingerprint, [
+                            'expires' => time() + 60 * 60 * 24 * 90, // 90 days
+                            'path' => '/',
+                            'domain' => parse_url(SITE_URL, PHP_URL_HOST),
+                            'secure' => true,
+                            'httponly' => false, // Needs to be readable by JS
+                            'samesite' => 'Lax'
+                        ]);
+                        
+                        // Redirect to dashboard
+                        header('Location: dashboard.php');
+                        exit();
+                    }
+                }
+            } else {
+                $errors[] = "Invalid email or password.";
+                
+                // Log failed login attempt
+                $db->logActivity(
+                    null,
+                    'failed_login',
+                    'Failed login attempt for email: ' . $email,
+                    $_SERVER['REMOTE_ADDR'],
+                    $_SERVER['HTTP_USER_AGENT'] ?? '',
+                    $fingerprint
+                );
+                
+                // Implement progressive delay for failed attempts
+                sleep(min(countFailedAttempts($email), 5)); // Max 5 second delay
+            }
         }
+    } catch (DeviceBlockedException $e) {
+        $e->showErrorPage(); // Shows the graphical error page
+        exit();
+    } catch (Exception $e) {
+        error_log('Login error: ' . $e->getMessage());
+        $errors[] = "An error occurred during login. Please try again.";
     }
 }
 
@@ -570,7 +572,7 @@ function countFailedAttempts(string $email): int {
                 webgl: webglInfo,
                 fonts: (() => {
                     try {
-                        return Array.from(new Set(document.fonts.values()).map(f => f.family));
+                        return Array.from(document.fonts).map(f => f.family);
                     } catch (e) {
                         return [];
                     }

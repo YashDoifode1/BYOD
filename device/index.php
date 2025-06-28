@@ -1,8 +1,8 @@
 <?php
 /**
- * Device Management Page
+ * Next-Gen Device Management Dashboard
  * 
- * Allows users to view and manage their trusted devices and active sessions
+ * Enhanced UI/UX for managing trusted devices and active sessions
  */
 
 session_start();
@@ -159,334 +159,558 @@ function getDeviceIcon($ua) {
     
     return 'fa-laptop';
 }
+
+// Function to get risk level
+function getRiskLevel($score) {
+    if ($score >= 70) return 'high';
+    if ($score >= 30) return 'medium';
+    return 'low';
+}
 ?>
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Device Management | Cybersecurity Portal</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        .trusted-badge {
-            background-color: #10B981;
+        :root {
+            --primary: #4F46E5;
+            --primary-dark: #4338CA;
+            --success: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --dark: #1F2937;
+            --light: #F9FAFB;
         }
-        .untrusted-badge {
-            background-color: #EF4444;
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F3F4F6;
         }
-        .pending-badge {
-            background-color: #F59E0B;
+        
+        .card {
+            margin-left:50px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+            transition: all 0.3s ease;
         }
-        .security-header {
-            background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+        
+        .card:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+            transform: translateY(-2px);
         }
-        .hover-scale {
-            transition: transform 0.2s ease-in-out;
+        
+        .card-header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
         }
-        .hover-scale:hover {
-            transform: scale(1.02);
+        
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            line-height: 1;
+        }
+        
+        .badge-trusted {
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+        
+        .badge-untrusted {
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+        }
+        
+        .badge-pending {
+            background-color: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+        
+        .risk-high {
+            color: var(--danger);
+        }
+        
+        .risk-medium {
+            color: var(--warning);
+        }
+        
+        .risk-low {
+            color: var(--success);
+        }
+        
+        .device-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background-color: rgba(79, 70, 229, 0.1);
+            color: var(--primary);
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+        }
+        
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #E5E7EB;
+            color: var(--dark);
+        }
+        
+        .btn-outline:hover {
+            background-color: #F9FAFB;
+        }
+        
+        .btn-danger {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background-color: #DC2626;
+        }
+        
+        .toast {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        .toast-success {
+            background-color: white;
+            border-left: 4px solid var(--success);
+        }
+        
+        .toast-error {
+            background-color: white;
+            border-left: 4px solid var(--danger);
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .tab-active {
+            border-bottom: 2px solid var(--primary);
+            color: var(--primary);
+            font-weight: 500;
+        }
+        
+        .security-score {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 1.25rem;
+        }
+        
+        .security-score-high {
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+        }
+        
+        .security-score-medium {
+            background-color: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+        
+        .security-score-low {
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--success);
         }
     </style>
 </head>
-<body class="bg-gray-50">
-    <!-- Header -->
-    <?php include __DIR__ . '/../includes/header.php'; ?>
-    <?php include __DIR__ . '/../includes/sidebar.php'; ?>
-    
-    <div class="container mx-auto px-4 py-8 lg:ml-64">
-        <!-- Success/Error Messages -->
-        <?php if ($action_success): ?>
-            <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6 rounded flex items-center">
-                <i class="fas fa-check-circle mr-2 text-lg"></i>
-                <p class="font-medium"><?= htmlspecialchars($action_success) ?></p>
-            </div>
-        <?php endif; ?>
+<body class="h-full">
+    <!-- Main Layout -->
+    <div class="flex h-full">
+        <!-- Sidebar -->
+        <?php include __DIR__ . '/../includes/sidebar.php'; ?>
         
-        <?php if (!empty($errors)): ?>
-            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded">
-                <div class="flex items-center">
-                    <i class="fas fa-exclamation-circle mr-2 text-lg"></i>
-                    <p class="font-medium">Error: Please fix the following issues:</p>
-                </div>
-                <ul class="mt-2 ml-6 list-disc">
-                    <?php foreach ($errors as $error): ?>
-                        <li><?= htmlspecialchars($error) ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            </div>
-        <?php endif; ?>
-        
-        <div class="max-w-6xl mx-auto">
-            <!-- Page Header -->
-            <div class="mb-6">
-                <h1 class="text-2xl font-bold text-gray-800">
-                    <i class="fas fa-laptop mr-2"></i>Device Management
-                </h1>
-                <p class="text-gray-600">Manage your trusted devices and active sessions</p>
-            </div>
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <?php include __DIR__ . '/../includes/header.php'; ?>
             
-            <!-- Current Device Info -->
-            <div class="bg-white rounded-lg shadow-md overflow-hidden mb-8 hover-scale">
-                <div class="security-header px-6 py-4">
-                    <h2 class="text-lg font-semibold text-white">
-                        <i class="fas fa-info-circle mr-2"></i>Current Device Information
-                    </h2>
-                </div>
-                <div class="p-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Main Content Area -->
+            <main class="flex-1 overflow-y-auto p-6">
+                <div class="max-w-7xl mx-auto">
+                    <!-- Page Header -->
+                    <div class="flex justify-between items-center mb-8">
                         <div>
-                            <h3 class="text-sm font-medium text-gray-500">Device Fingerprint</h3>
-                            <p class="mt-1 text-sm font-mono text-gray-800 break-all">
-                               <?= htmlspecialchars(substr($_SESSION['device_fingerprint'] ?? 'Not available', 0, 24)) ?>...
-
-                            </p>
+                            <h1 style=margin:20px; class="text-2xl font-bold text-gray-900">Device Management</h1>
+                            <p style=margin:20px; class="text-gray-500">Manage your trusted devices and active sessions</p>
                         </div>
                         <div>
-                            <h3 class="text-sm font-medium text-gray-500">IP Address</h3>
-                            <p class="mt-1 text-sm text-gray-800">
-                                <?= htmlspecialchars($_SERVER['REMOTE_ADDR']) ?>
-                            </p>
+                            <button class="btn btn-primary">
+                                <i class="fas fa-plus mr-2"></i> Add New Device
+                            </button>
                         </div>
-                        <div>
-                            <h3 class="text-sm font-medium text-gray-500">Device Type</h3>
-                            <p class="mt-1 text-sm text-gray-800">
-                                <i class="fas <?= getDeviceIcon($_SERVER['HTTP_USER_AGENT']) ?> mr-1"></i>
-                                <?= htmlspecialchars(parseUserAgent($_SERVER['HTTP_USER_AGENT'])) ?>
-                            </p>
+                    </div>
+                    
+                    <!-- Toast Notifications -->
+                    <?php if ($action_success): ?>
+                        <div class="toast toast-success">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span><?= htmlspecialchars($action_success) ?></span>
                         </div>
-                        <div>
-                            <h3 class="text-sm font-medium text-gray-500">Current Session</h3>
-                            <p class="mt-1 text-sm text-gray-800">
-                                Active since <?= date('M j, g:i a', strtotime($_SESSION['login_time'])) ?>
-                            </p>
+                    <?php endif; ?>
+                    
+                    <?php if (!empty($errors)): ?>
+                        <div class="toast toast-error">
+                            <i class="fas fa-exclamation-circle text-red-500 mr-2"></i>
+                            <div>
+                                <p class="font-medium">Error occurred:</p>
+                                <ul class="list-disc list-inside text-sm">
+                                    <?php foreach ($errors as $error): ?>
+                                        <li><?= htmlspecialchars($error) ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <!-- Security Overview -->
+                    <div  class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <!-- Current Device Card -->
+                        <div class="card">
+                            <div class="p-6">
+                                <div class="flex items-center mb-4">
+                                    <div class="device-icon mr-4">
+                                        <i class="fas <?= getDeviceIcon($_SERVER['HTTP_USER_AGENT']) ?>"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-medium text-gray-900">Current Device</h3>
+                                        <p class="text-sm text-gray-500"><?= htmlspecialchars(parseUserAgent($_SERVER['HTTP_USER_AGENT'])) ?></p>
+                                    </div>
+                                </div>
+                                <div class="space-y-3">
+                                    <div>
+                                        <p class="text-xs text-gray-500">IP Address</p>
+                                        <p class="text-sm font-medium"><?= htmlspecialchars($_SERVER['REMOTE_ADDR']) ?></p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500">Session Started</p>
+                                        <p class="text-sm font-medium"><?= date('M j, g:i a', strtotime($_SESSION['login_time'])) ?></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Security Score Card -->
+                        <div class="card">
+                            <div class="p-6">
+                                <h3 class="font-medium text-gray-900 mb-4">Account Security Score</h3>
+                                <div class="flex items-center justify-between">
+                                    <div class="security-score <?= count($devices) > 5 ? 'security-score-medium' : 'security-score-low' ?>">
+                                        <?= count($devices) > 5 ? '75' : '92' ?>/100
+                                    </div>
+                                    <div class="text-sm">
+                                        <p class="text-gray-500 mb-2"><?= count($devices) > 5 ? 'Medium security' : 'High security' ?></p>
+                                        <ul class="list-disc list-inside text-gray-500">
+                                            <li><?= count($active_sessions) ?> active sessions</li>
+                                            <li><?= count($devices) ?> trusted devices</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Quick Actions Card -->
+                        <div class="card">
+                            <div class="p-6">
+                                <h3 class="font-medium text-gray-900 mb-4">Quick Actions</h3>
+                                <div class="space-y-3">
+                                    <button class="btn btn-outline w-full">
+                                        <i class="fas fa-sign-out-alt mr-2"></i> Logout All Sessions
+                                    </button>
+                                    <button class="btn btn-outline w-full">
+                                        <i class="fas fa-shield-alt mr-2"></i> Enable 2FA
+                                    </button>
+                                    <button class="btn btn-outline w-full">
+                                        <i class="fas fa-bell mr-2"></i> Set Up Alerts
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Tab Navigation -->
+                    <div style=margin:20px; class="border-b border-gray-200 mb-6">
+                        <nav class="-mb-px flex space-x-8">
+                            <a href="#" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm tab-active">
+                                <i class="fas fa-laptop mr-2"></i> Devices (<?= count($devices) ?>)
+                            </a>
+                            <a href="#" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                                <i class="fas fa-plug mr-2"></i> Sessions (<?= count($active_sessions) ?>)
+                            </a>
+                            <a href="#" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                                <i class="fas fa-shield-alt mr-2"></i> Security Settings
+                            </a>
+                        </nav>
+                    </div>
+                    
+                    <!-- Devices Table -->
+                    <div class="card overflow-hidden mb-8">
+                        <div class="card-header px-6 py-4">
+                            <h2 class="text-lg font-semibold text-white">Trusted Devices</h2>
+                            <p class="text-sm text-blue-100 mt-1">Manage devices that can access your account</p>
+                        </div>
+                        <div class="p-6">
+                            <?php if (empty($devices)): ?>
+                                <div class="text-center py-12">
+                                    <i class="fas fa-laptop text-gray-300 text-4xl mb-4"></i>
+                                    <h3 class="text-lg font-medium text-gray-900">No trusted devices</h3>
+                                    <p class="text-gray-500 mt-1">You haven't added any trusted devices yet.</p>
+                                    <button class="btn btn-primary mt-4">
+                                        <i class="fas fa-plus mr-2"></i> Add Device
+                                    </button>
+                                </div>
+                            <?php else: ?>
+                                <div class="overflow-x-auto">
+                                    <table class="min-w-full divide-y divide-gray-200">
+                                        <thead class="bg-gray-50">
+                                            <tr>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device</th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Risk</th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Used</th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="bg-white divide-y divide-gray-200">
+                                            <?php foreach ($devices as $device): ?>
+                                                <tr>
+                                                    <td class="px-6 py-4 whitespace-nowrap">
+                                                        <div class="flex items-center">
+                                                            <div class="device-icon mr-3">
+                                                                <i class="fas <?= getDeviceIcon($device['user_agent']) ?>"></i>
+                                                            </div>
+                                                            <div>
+                                                                <div class="text-sm font-medium text-gray-900"><?= htmlspecialchars(parseUserAgent($device['user_agent'])) ?></div>
+                                                                <div class="text-xs text-gray-500"><?= substr(htmlspecialchars($device['fingerprint']), 0, 8) ?>...</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap">
+                                                        <div class="text-sm text-gray-900"><?= htmlspecialchars($device['ip_address']) ?></div>
+                                                        <?php if (!empty($device['ip_status'])): ?>
+                                                            <div class="text-xs text-gray-500"><?= htmlspecialchars($device['ip_status']) ?></div>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap">
+                                                        <?php 
+                                                        $badge_class = '';
+                                                        if ($device['trust_status'] === 'trusted') {
+                                                            $badge_class = 'badge-trusted';
+                                                        } elseif ($device['trust_status'] === 'untrusted') {
+                                                            $badge_class = 'badge-untrusted';
+                                                        } else {
+                                                            $badge_class = 'badge-pending';
+                                                        }
+                                                        ?>
+                                                        <span class="<?= $badge_class ?>">
+                                                            <i class="fas <?= $device['trust_status'] === 'trusted' ? 'fa-check-circle' : ($device['trust_status'] === 'untrusted' ? 'fa-times-circle' : 'fa-clock') ?> mr-1"></i>
+                                                            <?= ucfirst($device['trust_status']) ?>
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap">
+                                                        <?php $risk_level = getRiskLevel($device['ip_score'] ?? 0); ?>
+                                                        <div class="text-sm font-medium <?= 'risk-' . $risk_level ?>">
+                                                            <i class="fas <?= $risk_level === 'high' ? 'fa-exclamation-triangle' : ($risk_level === 'medium' ? 'fa-exclamation-circle' : 'fa-check-circle') ?> mr-1"></i>
+                                                            <?= ucfirst($risk_level) ?> risk
+                                                        </div>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        <?= date('M j, Y', strtotime($device['last_used'])) ?>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                        <div class="flex space-x-2">
+                                                            <form method="post" class="inline">
+                                                                <input type="hidden" name="device_id" value="<?= $device['id'] ?>">
+                                                                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                                                                <?php if ($device['trust_status'] !== 'trusted'): ?>
+                                                                    <button type="submit" name="action" value="trust" class="text-indigo-600 hover:text-indigo-900" title="Trust Device">
+                                                                        <i class="fas fa-check"></i>
+                                                                    </button>
+                                                                <?php endif; ?>
+                                                                <?php if ($device['trust_status'] !== 'untrusted'): ?>
+                                                                    <button type="submit" name="action" value="untrust" class="text-yellow-600 hover:text-yellow-900" title="Untrust Device">
+                                                                        <i class="fas fa-exclamation"></i>
+                                                                    </button>
+                                                                <?php endif; ?>
+                                                                <button type="submit" name="action" value="remove" class="text-red-600 hover:text-red-900" title="Remove Device" onclick="return confirm('Are you sure you want to remove this device?')">
+                                                                    <i class="fas fa-trash"></i>
+                                                                </button>
+                                                            </form>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    
+                    <!-- Security Tips -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Best Practices -->
+                        <div class="card">
+                            <div class="card-header px-6 py-4">
+                                <h2 class="text-lg font-semibold text-white">Security Best Practices</h2>
+                            </div>
+                            <div class="p-6">
+                                <ul class="space-y-4">
+                                    <li class="flex items-start">
+                                        <div class="flex-shrink-0 h-5 w-5 text-green-500 mt-1">
+                                            <i class="fas fa-check-circle"></i>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p class="text-sm font-medium text-gray-700">Use unique passwords</p>
+                                            <p class="text-sm text-gray-500">Never reuse passwords across different services</p>
+                                        </div>
+                                    </li>
+                                    <li class="flex items-start">
+                                        <div class="flex-shrink-0 h-5 w-5 text-green-500 mt-1">
+                                            <i class="fas fa-check-circle"></i>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p class="text-sm font-medium text-gray-700">Enable two-factor authentication</p>
+                                            <p class="text-sm text-gray-500">Add an extra layer of security to your account</p>
+                                        </div>
+                                    </li>
+                                    <li class="flex items-start">
+                                        <div class="flex-shrink-0 h-5 w-5 text-green-500 mt-1">
+                                            <i class="fas fa-check-circle"></i>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p class="text-sm font-medium text-gray-700">Review devices regularly</p>
+                                            <p class="text-sm text-gray-500">Remove any devices you no longer use</p>
+                                        </div>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <!-- Recent Activity -->
+                        <div class="card">
+                            <div class="card-header px-6 py-4">
+                                <h2 class="text-lg font-semibold text-white">Recent Security Activity</h2>
+                            </div>
+                            <div class="p-6">
+                                <div class="space-y-4">
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0 h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                                            <i class="fas fa-laptop text-indigo-600"></i>
+                                        </div>
+                                        <div class="ml-4">
+                                            <p class="text-sm font-medium text-gray-900">New device added</p>
+                                            <p class="text-sm text-gray-500">iPhone from New York, US</p>
+                                            <p class="text-xs text-gray-400 mt-1">2 hours ago</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0 h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
+                                            <i class="fas fa-shield-alt text-green-600"></i>
+                                        </div>
+                                        <div class="ml-4">
+                                            <p class="text-sm font-medium text-gray-900">Password changed</p>
+                                            <p class="text-sm text-gray-500">Your account password was updated</p>
+                                            <p class="text-xs text-gray-400 mt-1">1 day ago</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0 h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                            <i class="fas fa-sign-in-alt text-blue-600"></i>
+                                        </div>
+                                        <div class="ml-4">
+                                            <p class="text-sm font-medium text-gray-900">Login from new location</p>
+                                            <p class="text-sm text-gray-500">London, UK</p>
+                                            <p class="text-xs text-gray-400 mt-1">3 days ago</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button class="btn btn-outline w-full mt-4">
+                                    <i class="fas fa-history mr-2"></i> View Full Activity Log
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            
-            <!-- Active Sessions -->
-            <div class="bg-white rounded-lg shadow-md overflow-hidden mb-8 hover-scale">
-                <div class="security-header px-6 py-4">
-                    <h2 class="text-lg font-semibold text-white">
-                        <i class="fas fa-plug mr-2"></i>Active Sessions (<?= count($active_sessions) ?>)
-                    </h2>
-                    <p class="text-sm text-blue-200 mt-1">Manage all devices currently logged into your account</p>
-                </div>
-                
-                <div class="p-6">
-                    <?php if (empty($active_sessions)): ?>
-                        <p class="text-sm text-gray-500">No active sessions found.</p>
-                    <?php else: ?>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Activity</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    <?php foreach ($active_sessions as $session): ?>
-                                        <tr>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <div class="flex items-center">
-                                                    <div class="flex-shrink-0 h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                                                        <i class="fas <?= getDeviceIcon($session['device_user_agent']) ?> text-gray-500"></i>
-                                                    </div>
-                                                    <div class="ml-4">
-                                                        <div class="text-sm font-medium text-gray-900">
-                                                            <?= htmlspecialchars(parseUserAgent($session['device_user_agent'])) ?>
-                                                            <?php if ($session['session_id'] === session_id()): ?>
-                                                                <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                                    Current
-                                                                </span>
-                                                            <?php endif; ?>
-                                                        </div>
-                                                        <div class="text-sm text-gray-500"><?= substr(htmlspecialchars($session['fingerprint']), 0, 8) ?>...</div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <div class="text-sm text-gray-900"><?= htmlspecialchars($session['ip_address']) ?></div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <?php 
-                                                $badge_class = '';
-                                                if ($session['trust_status'] === 'trusted') {
-                                                    $badge_class = 'trusted-badge';
-                                                } elseif ($session['trust_status'] === 'untrusted') {
-                                                    $badge_class = 'untrusted-badge';
-                                                } else {
-                                                    $badge_class = 'pending-badge';
-                                                }
-                                                ?>
-                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white <?= $badge_class ?>">
-                                                    <?= ucfirst($session['trust_status']) ?>
-                                                </span>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <?= date('M j, g:i a', strtotime($session['last_activity'])) ?>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                <?php if ($session['session_id'] !== session_id()): ?>
-                                                    <a href="?revoke_session=<?= htmlspecialchars($session['session_id']) ?>" class="text-red-600 hover:text-red-900" onclick="return confirm('Are you sure you want to revoke this session?')">
-                                                        <i class="fas fa-sign-out-alt mr-1"></i>Revoke
-                                                    </a>
-                                                <?php else: ?>
-                                                    <span class="text-gray-400">Current session</span>
-                                                <?php endif; ?>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-            
-            <!-- Trusted Devices -->
-            <div class="bg-white rounded-lg shadow-md overflow-hidden hover-scale">
-                <div class="security-header px-6 py-4">
-                    <h2 class="text-lg font-semibold text-white">
-                        <i class="fas fa-shield-alt mr-2"></i>Trusted Devices (<?= count($devices) ?>)
-                    </h2>
-                    <p class="text-sm text-blue-200 mt-1">Manage devices that can access your account without additional verification</p>
-                </div>
-                
-                <div class="p-6">
-                    <?php if (empty($devices)): ?>
-                        <p class="text-sm text-gray-500">No trusted devices found.</p>
-                    <?php else: ?>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Used</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    <?php foreach ($devices as $device): ?>
-                                        <tr>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <div class="flex items-center">
-                                                    <div class="flex-shrink-0 h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                                                        <i class="fas <?= getDeviceIcon($device['user_agent']) ?> text-gray-500"></i>
-                                                    </div>
-                                                    <div class="ml-4">
-                                                        <div class="text-sm font-medium text-gray-900"><?= htmlspecialchars(parseUserAgent($device['user_agent'])) ?></div>
-                                                        <div class="text-sm text-gray-500"><?= substr(htmlspecialchars($device['fingerprint']), 0, 8) ?>...</div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <div class="text-sm text-gray-900"><?= htmlspecialchars($device['ip_address']) ?></div>
-                                                <?php if (!empty($device['ip_status'])): ?>
-                                                    <div class="text-xs text-gray-500"><?= htmlspecialchars($device['ip_status']) ?> (Score: <?= (int)$device['ip_score'] ?>)</div>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <?php 
-                                                $badge_class = '';
-                                                if ($device['trust_status'] === 'trusted') {
-                                                    $badge_class = 'trusted-badge';
-                                                } elseif ($device['trust_status'] === 'untrusted') {
-                                                    $badge_class = 'untrusted-badge';
-                                                } else {
-                                                    $badge_class = 'pending-badge';
-                                                }
-                                                ?>
-                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white <?= $badge_class ?>">
-                                                    <?= ucfirst($device['trust_status']) ?>
-                                                </span>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <?= date('M j, Y', strtotime($device['last_used'])) ?>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                <form method="post" class="inline">
-                                                    <input type="hidden" name="device_id" value="<?= $device['id'] ?>">
-                                                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                                                    <?php if ($device['trust_status'] !== 'trusted'): ?>
-                                                        <button type="submit" name="action" value="trust" class="text-green-600 hover:text-green-900 mr-3">
-                                                            <i class="fas fa-check-circle mr-1"></i>Trust
-                                                        </button>
-                                                    <?php endif; ?>
-                                                    <?php if ($device['trust_status'] !== 'untrusted'): ?>
-                                                        <button type="submit" name="action" value="untrust" class="text-yellow-600 hover:text-yellow-900 mr-3">
-                                                            <i class="fas fa-exclamation-triangle mr-1"></i>Untrust
-                                                        </button>
-                                                    <?php endif; ?>
-                                                    <button type="submit" name="action" value="remove" class="text-red-600 hover:text-red-900" onclick="return confirm('Are you sure you want to remove this device?')">
-                                                        <i class="fas fa-trash-alt mr-1"></i>Remove
-                                                    </button>
-                                                </form>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-            
-            <!-- Security Recommendations -->
-            <div class="mt-8 bg-white rounded-lg shadow-md overflow-hidden hover-scale">
-                <div class="security-header px-6 py-4">
-                    <h2 class="text-lg font-semibold text-white">
-                        <i class="fas fa-lightbulb mr-2"></i>Security Recommendations
-                    </h2>
-                </div>
-                <div class="p-6">
-                    <ul class="space-y-4">
-                        <li class="flex items-start">
-                            <div class="flex-shrink-0 h-5 w-5 text-green-500 mt-1">
-                                <i class="fas fa-check-circle"></i>
-                            </div>
-                            <div class="ml-3">
-                                <p class="text-sm font-medium text-gray-700">Regularly review your trusted devices</p>
-                                <p class="text-sm text-gray-500">Remove any devices you no longer use or don't recognize</p>
-                            </div>
-                        </li>
-                        <li class="flex items-start">
-                            <div class="flex-shrink-0 h-5 w-5 text-green-500 mt-1">
-                                <i class="fas fa-check-circle"></i>
-                            </div>
-                            <div class="ml-3">
-                                <p class="text-sm font-medium text-gray-700">Enable Two-Factor Authentication</p>
-                                <p class="text-sm text-gray-500">Add an extra layer of security to your account</p>
-                            </div>
-                        </li>
-                        <li class="flex items-start">
-                            <div class="flex-shrink-0 h-5 w-5 text-green-500 mt-1">
-                                <i class="fas fa-check-circle"></i>
-                            </div>
-                            <div class="ml-3">
-                                <p class="text-sm font-medium text-gray-700">Revoke sessions from public computers</p>
-                                <p class="text-sm text-gray-500">Always log out when using shared devices</p>
-                            </div>
-                        </li>
-                    </ul>
-                </div>
-            </div>
+            </main>
         </div>
     </div>
 
     <script>
-        // Confirm before revoking sessions or removing devices
-        function confirmAction(message) {
-            return confirm(message || 'Are you sure you want to perform this action?');
-        }
+        // Toast auto-dismiss
+        document.addEventListener('DOMContentLoaded', function() {
+            const toasts = document.querySelectorAll('.toast');
+            
+            toasts.forEach(toast => {
+                setTimeout(() => {
+                    toast.style.transition = 'all 0.3s ease';
+                    toast.style.transform = 'translateY(100%)';
+                    toast.style.opacity = '0';
+                    
+                    setTimeout(() => {
+                        toast.remove();
+                    }, 300);
+                }, 5000);
+            });
+            
+            // Confirm before revoking sessions or removing devices
+            function confirmAction(message) {
+                return confirm(message || 'Are you sure you want to perform this action?');
+            }
+        });
     </script>
 </body>
 </html>
