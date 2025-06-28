@@ -1,6 +1,6 @@
 # 📁 Project Management Dashboard
 
-![Dashboard Screenshot](https://screenshots/dashboard.png)
+![Dashboard Screenshot](/assets/dashboardss.png)
 
 A powerful and intuitive project management tool built to streamline your workflow and supercharge team productivity. Get real-time analytics, track tasks, and manage users—all in one place.
 
