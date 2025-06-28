@@ -510,4 +510,6 @@ class DeviceManager {
             $deviceFingerprint
         );
     }
+
+    
 }
