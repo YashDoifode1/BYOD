@@ -4,6 +4,91 @@ require_once 'Database.php';
 define('ABUSEIPDB_API_KEY', '9dd9a70ede1f6328f3a520c80a304016789a485bf4cf27dd4ee9a90a480d9b419fb35361a020225a');
 define('IPQS_API_KEY', 'UIBQsNrKKJy9yOjGx4JLNPSJSE6XGxQy');
 
+class DeviceBlockedException extends Exception {
+    public function __construct($message = "This device has been blocked due to security concerns.", $code = 0, Throwable $previous = null) {
+        parent::__construct($message, $code, $previous);
+    }
+    
+    public function showErrorPage() {
+        http_response_code(403); // Forbidden
+        ?>
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Device Blocked</title>
+            <style>
+                body {
+                    font-family: 'Arial', sans-serif;
+                    background-color: #f8f9fa;
+                    color: #343a40;
+                    margin: 0;
+                    padding: 0;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                }
+                .error-container {
+                    background-color: white;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                    padding: 2rem;
+                    max-width: 500px;
+                    text-align: center;
+                    border-left: 5px solid #dc3545;
+                }
+                .error-icon {
+                    font-size: 3rem;
+                    color: #dc3545;
+                    margin-bottom: 1rem;
+                }
+                h1 {
+                    color: #dc3545;
+                    margin-top: 0;
+                }
+                p {
+                    margin-bottom: 1.5rem;
+                    line-height: 1.6;
+                }
+                .contact {
+                    font-size: 0.9rem;
+                    color: #6c757d;
+                    margin-top: 1.5rem;
+                }
+                .btn {
+                    display: inline-block;
+                    background-color: #dc3545;
+                    color: white;
+                    padding: 0.5rem 1rem;
+                    border-radius: 4px;
+                    text-decoration: none;
+                    transition: background-color 0.3s;
+                }
+                .btn:hover {
+                    background-color: #c82333;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="error-container">
+                <div class="error-icon">⚠️</div>
+                <h1>Device Blocked</h1>
+                <p><?php echo htmlspecialchars($this->message); ?></p>
+                <p>Our system has detected potential security risks associated with this device.</p>
+                <a href="/contact" class="btn">Contact Support</a>
+                <div class="contact">
+                    If you believe this is an error, please contact our support team with reference #<?php echo bin2hex(random_bytes(4)); ?>
+                </div>
+            </div>
+        </body>
+        </html>
+        <?php
+        exit;
+    }
+}
+
 class DeviceManager {
     private $db;
     private $deviceTTL = 7776000; // 90 days in seconds
@@ -20,8 +105,17 @@ class DeviceManager {
     /**
      * Generates a unique and consistent device fingerprint based on stable client information
      * @return string
+     * @throws DeviceBlockedException
      */
     public function generateDeviceFingerprint(): string {
+        // First check if the device is already marked as untrusted
+        if (isset($_SESSION['device_fingerprint'])) {
+            $existingStatus = $this->getDeviceTrustStatus($_SESSION['device_fingerprint']);
+            if ($existingStatus === 'untrusted') {
+                throw new DeviceBlockedException();
+            }
+        }
+
         // Get device info from form submission and client
         $deviceInfo = json_decode($_POST['device_info'] ?? '{}', true);
 
@@ -56,10 +150,27 @@ class DeviceManager {
         // Generate a stable hash
         $hash = hash('sha256', json_encode($fingerprintData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
+        // Check if this fingerprint is already marked as untrusted
+        $trustStatus = $this->getDeviceTrustStatus($hash);
+        if ($trustStatus === 'untrusted') {
+            throw new DeviceBlockedException();
+        }
+
         // Store only the hash in session
         $_SESSION['device_fingerprint'] = $hash;
 
         return $hash;
+    }
+
+    /**
+     * Gets the trust status of a device fingerprint
+     * @param string $deviceFingerprint
+     * @return string|null
+     */
+    public function getDeviceTrustStatus(string $deviceFingerprint): ?string {
+        $query = "SELECT trust_status FROM device_fingerprints WHERE fingerprint = ?";
+        $result = $this->db->query($query, [$deviceFingerprint])->fetchColumn();
+        return $result ?: null;
     }
 
     /**
@@ -105,8 +216,15 @@ class DeviceManager {
      * @param int $userId
      * @param string $deviceFingerprint
      * @return bool
+     * @throws DeviceBlockedException
      */
     public function registerDevice(int $userId, string $deviceFingerprint): bool {
+        // First check if the device is marked as untrusted
+        $trustStatus = $this->getDeviceTrustStatus($deviceFingerprint);
+        if ($trustStatus === 'untrusted') {
+            throw new DeviceBlockedException();
+        }
+
         // Get client IP address
         $ipAddress = $this->getClientIp();
         
@@ -118,11 +236,16 @@ class DeviceManager {
 
         // Check if fingerprint already exists
         $existing = $this->db->query(
-            "SELECT id FROM device_fingerprints WHERE fingerprint = ?",
+            "SELECT id, trust_status FROM device_fingerprints WHERE fingerprint = ?",
             [$deviceFingerprint]
         )->fetch();
 
         if ($existing) {
+            // If device is untrusted, block registration
+            if ($existing['trust_status'] === 'untrusted') {
+                throw new DeviceBlockedException();
+            }
+
             // Update existing device
             $query = "UPDATE device_fingerprints 
                      SET user_id = ?, user_agent = ?, ip_address = ?, last_used = NOW() 
@@ -138,17 +261,24 @@ class DeviceManager {
         // Check IP reputation
         $ipReputation = $this->checkIpReputation($ipAddress);
         
+        // Determine initial trust status based on IP reputation
+        $initialTrustStatus = 'pending';
+        if ($ipReputation['status'] === 'suspicious') {
+            $initialTrustStatus = 'untrusted';
+        }
+        
         // Insert new device fingerprint
         $query = "INSERT INTO device_fingerprints (
                     user_id, fingerprint, user_agent, ip_address, ip_reputation, trust_status, last_used
-                  ) VALUES (?, ?, ?, ?, ?, 'pending', NOW())";
+                  ) VALUES (?, ?, ?, ?, ?, ?, NOW())";
         
         $result = $this->db->query($query, [
             $userId,
             $deviceFingerprint,
             $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
             $ipAddress,
-            $ipReputation['status']
+            $ipReputation['status'],
+            $initialTrustStatus
         ])->rowCount() > 0;
 
         if ($result) { 
@@ -217,9 +347,14 @@ class DeviceManager {
             "UPDATE device_fingerprints SET 
                 risk_score = ?, 
                 ip_reputation = ?,
-                ip_address = ?
+                ip_address = ?,
+                trust_status = CASE 
+                    WHEN ? >= 60 THEN 'untrusted'
+                    WHEN trust_status = 'untrusted' THEN 'untrusted'
+                    ELSE trust_status
+                END
              WHERE fingerprint = ?",
-            [$riskScore, $ipReputation['status'], $ipAddress, $deviceFingerprint]
+            [$riskScore, $ipReputation['status'], $ipAddress, $riskScore, $deviceFingerprint]
         );
 
         if ($riskScore >= 60) {
@@ -422,8 +557,15 @@ class DeviceManager {
      * @param int $userId
      * @param string $deviceFingerprint
      * @return bool
+     * @throws DeviceBlockedException
      */
     public function updateDeviceActivity(int $userId, string $deviceFingerprint): bool {
+        // First check if the device is marked as untrusted
+        $trustStatus = $this->getDeviceTrustStatus($deviceFingerprint);
+        if ($trustStatus === 'untrusted') {
+            throw new DeviceBlockedException();
+        }
+
         $ipAddress = $this->getClientIp();
         $ipReputation = $this->checkIpReputation($ipAddress);
         
@@ -486,6 +628,21 @@ class DeviceManager {
     public function markDeviceAsTrusted(int $userId, string $deviceFingerprint): bool {
         $query = "UPDATE device_fingerprints 
                  SET trust_status = 'trusted' 
+                 WHERE user_id = ? 
+                 AND fingerprint = ?";
+        
+        return $this->db->query($query, [$userId, $deviceFingerprint])->rowCount() > 0;
+    }
+
+    /**
+     * Marks a device as untrusted
+     * @param int $userId
+     * @param string $deviceFingerprint
+     * @return bool
+     */
+    public function markDeviceAsUntrusted(int $userId, string $deviceFingerprint): bool {
+        $query = "UPDATE device_fingerprints 
+                 SET trust_status = 'untrusted' 
                  WHERE user_id = ? 
                  AND fingerprint = ?";
         
