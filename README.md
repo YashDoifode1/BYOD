@@ -10,6 +10,7 @@ A powerful and intuitive project management tool built to streamline your workfl
 
 The Project Management Dashboard is a full-featured web application built with PHP and MySQL, designed to help teams manage tasks, track progress, and visualize performance. It works perfectly on **XAMPP** for local development and testing.
 
+---
 
 ## 🚀 Features
 
