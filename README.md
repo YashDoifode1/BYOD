@@ -1,149 +1,169 @@
-Project Management Dashboard
-https://screenshots/dashboard.png
+# 📁 Project Management Dashboard
 
-Overview
-A professional project management dashboard with comprehensive analytics and task tracking capabilities. This web application provides real-time insights into projects, tasks, and team performance with beautiful visualizations and interactive elements.
+![Dashboard Screenshot](/assets/dashboardss.png)
 
-Features
-Real-time Analytics Dashboard
+A powerful and intuitive project management tool built to streamline your workflow and supercharge team productivity. Get real-time analytics, track tasks, and manage users—all in one place.
 
-User growth tracking
+---
 
-Project status distribution
+## ✨ Overview
 
-Task completion metrics
+The Project Management Dashboard is a full-featured web application built with PHP and MySQL, designed to help teams manage tasks, track progress, and visualize performance. It works perfectly on **XAMPP** for local development and testing.
 
-Recent activity feed
+---
 
-Task Management
+## 🚀 Features
 
-Kanban-style task board
+### 📊 Real-Time Analytics
+- Track user growth and engagement
+- Monitor project progress and health
+- Visual charts for tasks and activities
+- Recent updates feed
 
-Drag-and-drop functionality
+### ✅ Task Management
+- Kanban-style board
+- Drag-and-drop functionality
+- Task status tracking (To Do, In Progress, Done)
+- Set task priority with visual indicators
 
-Task status tracking (To Do, In Progress, Done)
+### 📂 Project Tracking
+- Assign and manage team members per project
+- Visualize project progress
+- Upload and share project-related files
+- Built-in team communication
 
-Priority indicators
+### 👥 User Management
+- Role-based access (Admin, Manager, User)
+- User activity logs
+- Performance metrics per user
 
-Project Tracking
+---
 
-Project progress visualization
+## 💻 Tech Stack
 
-Team member assignment
+### Frontend
+- HTML5, CSS3, JavaScript
+- Bootstrap 5 for responsive UI
+- Chart.js for data visualization
+- jQuery for UI components
+- Date Range Picker
 
-File sharing and messaging
+### Backend
+- PHP 8.0+
+- MySQL 8.0+ (via XAMPP)
+- PDO for secure database access
 
-User Management
+### 🔐 Security
+- SQL Injection-safe queries (Prepared Statements)
+- Role-based authentication
+- Secure session management
 
-Role-based access control (Admin, Manager, User)
+---
 
-Activity logging
+## 🛠 Installation Guide (XAMPP)
 
-User performance metrics
+### 📦 Prerequisites
+- [XAMPP](https://www.apachefriends.org/) installed (PHP 8.0+ and MySQL 8.0+)
+- Composer installed globally
 
-Technologies Used
-Frontend
-HTML5, CSS3, JavaScript
+### 🧰 Setup Instructions
 
-Bootstrap 5
+1. **Download/Clone the project**
+   ```bash
+   git clone https://github.com/yourusername/project-management-dashboard.git
+    ```
 
-Chart.js for data visualization
+2. **Move the project to XAMPP's `htdocs` directory**
 
-jQuery (for UI components)
+   ```bash
+   mv project-management-dashboard/ C:/xampp/htdocs/
+   ```
 
-Date Range Picker
+3. **Start XAMPP Control Panel**
 
-Backend
-PHP 8.0+
+   * Enable **Apache** and **MySQL**
 
-MySQL 8.0
+4. **Set up the database**
 
-PDO for database access
+   * Open [http://localhost/phpmyadmin](http://localhost/phpmyadmin)
+   * Create a new database named `project_management`
+   * Import `database/schema.sql` file into this database
 
-Security
-Prepared statements for SQL queries
+5. **Configure Environment**
 
-Role-based authentication
+   * Copy `.env.example` to `.env`
+   * Update database details in `.env` (if used) or directly in `config.php`:
 
-Session management
+     ```ini
+     DB_HOST=localhost
+     DB_NAME=project_management
+     DB_USER=root
+     DB_PASS=
+     ```
 
-Installation
-Prerequisites
-Web server (Apache/Nginx)
+6. **Install Composer dependencies**
+   Open terminal in the project folder:
 
-PHP 8.0+
+   ```bash
+   composer install
+   ```
 
-MySQL 8.0+
+7. **Access the project**
+   Open your browser and navigate to:
 
-Composer (for dependencies)
+   ```
+   http://localhost/project-management-dashboard/public
+   ```
 
-Setup Instructions
-Clone the repository:
+---
 
-bash
-git clone https://github.com/yourusername/project-management-dashboard.git
-cd project-management-dashboard
-Install dependencies:
+## 📖 Usage
 
-bash
-composer install
-Set up the database:
+* Default login credentials:
 
-Create a new MySQL database
+  * **Email:** [admin@example.com](mailto:admin@example.com)
+  * **Password:** admin123
 
-Import the SQL schema from database/schema.sql
+* You can now:
 
-Configure the application:
+  * Create and manage projects
+  * Assign team members
+  * Track project progress
+  * View insightful analytics
 
-Copy .env.example to .env
+---
 
-Update database credentials in .env
+## 🤝 Contributing
 
-ini
-DB_HOST=localhost
-DB_NAME=project_management
-DB_USER=root
-DB_PASS=
-Set up file permissions:
+Contributions are always welcome! Here’s how you can contribute:
 
-bash
-chmod -R 755 storage/
-chown -R www-data:www-data public/uploads/
-Start the development server:
+1. Fork this repository
+2. Create your branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-bash
-php -S localhost:8000 -t public
-Usage
-Access the application at http://localhost:8000
+---
 
-Login with admin credentials:
+## 📄 License
 
-Username: 
+This project is licensed under the MIT License. See the `LICENSE` file for more details.
 
-Password: 
+---
 
-Explore the dashboard and project management features
+## 📬 Contact
 
+**Maintainer:** Your Name
+🔗 [GitHub Repository](https://github.com/yash.doifode1/BYOD)
 
+> 📌 *For more details, check the [Wiki](https://github.com/yourusername/project-management-dashboard/wiki).*
 
-Contributing
-Fork the project
+```
 
-Create your feature branch (git checkout -b feature/AmazingFeature)
+### ✅ Suggestions:
+- Replace `"Your Name"` and `"yourusername"` with your actual name and GitHub username.
+- Ensure `database/schema.sql` exists in your project.
+- Add the actual screenshot URL if available.
 
-Commit your changes (git commit -m 'Add some AmazingFeature')
-
-Push to the branch (git push origin feature/AmazingFeature)
-
-Open a Pull Request
-
-License
-Distributed under the MIT License. See LICENSE for more information.
-
-Contact
-Project Maintainer - Your Name
-
-Project Link: https://github.com/yash.doifode1/BYOD
-
-Note: For detailed documentation, please refer to the Wiki pages.
-
+Let me know if you'd like badges, logo support, or a one-liner summary at the top!
+```

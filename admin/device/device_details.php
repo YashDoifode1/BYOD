@@ -4,7 +4,7 @@ require_once __DIR__ . '/../includes/config.php';
 
 function isAdmin(): bool {
     // Adjust this check to match your session or user management system
-    return isset($_SESSION['role']) && $_SESSION['user_role'] === 'admin';
+    return isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin';
 }
 
 // Verify admin access

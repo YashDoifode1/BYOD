@@ -138,6 +138,7 @@ try {
                                 <span>Files</span>
                             </a>
                         </li>
+                        
                         <li class="nav-item">
                             <a class="nav-link d-flex align-items-center text-white py-2 px-3 rounded <?= strpos($_SERVER['REQUEST_URI'], 'settings.php') !== false ? 'active' : '' ?>" 
                                href="<?= APP_URL ?>/settings/profile.php" style="transition: all 0.3s;">
@@ -145,6 +146,13 @@ try {
                                 <span>Settings</span>
                             </a>
                         </li>
+                        <li class="nav-item">
+                <a class="nav-link d-flex align-items-center text-white py-2 px-3 rounded <?= strpos($_SERVER['REQUEST_URI'], '/device/') !== false ? 'active' : '' ?>" 
+                   href="<?= APP_URL ?>/device/index.php" style="transition: all 0.3s;">
+                    <i class="fa-solid fa-computer-classic"></i>
+                    <span>Device Management</span>
+                </a>
+            </li>
                         <li class="nav-item">
                             <a class="nav-link d-flex align-items-center text-white py-2 px-3 rounded" 
                                href="<?= APP_URL ?>/logout.php" style="transition: all 0.3s;">
