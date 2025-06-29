@@ -143,6 +143,25 @@ $stats = [
     'active' => $pdo->query("SELECT COUNT(*) FROM users WHERE last_login IS NOT NULL AND last_login > DATE_SUB(NOW(), INTERVAL 30 MINUTE)")->fetchColumn(),
     'with_2fa' => $pdo->query("SELECT COUNT(*) FROM users WHERE two_factor_secret IS NOT NULL")->fetchColumn(),
 ];
+
+// Data for Pie Chart (User Role Distribution)
+$role_data = [
+    'labels' => ['Admins', 'Managers', 'Regular Users'],
+    'data' => [$stats['admins'], $stats['managers'], $stats['regular']],
+    'colors' => ['#dc3545', '#ffc107', '#007bff']
+];
+
+// Data for Bar Chart (Active Users Last 7 Days)
+$activity_data = [];
+$activity_labels = [];
+for ($i = 6; $i >= 0; $i--) {
+    $date = date('Y-m-d', strtotime("-$i days"));
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE last_login IS NOT NULL AND DATE(last_login) = ?");
+    $stmt->execute([$date]);
+    $count = $stmt->fetchColumn();
+    $activity_data[] = $count;
+    $activity_labels[] = date('M d', strtotime($date));
+}
 ?>
 
 <!-- Main Content -->
@@ -260,6 +279,27 @@ $stats = [
                         <i class="fas fa-user fa-2x text-gray-300"></i>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Card -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">
+            <i class="fas fa-chart-pie me-1"></i> User Analytics
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-lg-6 mb-4">
+                <h6 class="text-center">User Role Distribution</h6>
+                <canvas id="rolePieChart" height="200"></canvas>
+            </div>
+            <div class="col-lg-6 mb-4">
+                <h6 class="text-center">Active Users (Last 7 Days)</h6>
+                <canvas id="activityBarChart" height="200"></canvas>
             </div>
         </div>
     </div>
@@ -644,6 +684,18 @@ $stats = [
 .table-responsive::-webkit-scrollbar-thumb:hover {
     background: #555;
 }
+
+/* Chart styling */
+.chart-container {
+    position: relative;
+    margin: auto;
+    height: 100px;
+    width: 50;
+}
+
+canvas {
+    max-width: 100%;
+}
 </style>
 
 <!-- JavaScript Libraries -->
@@ -655,6 +707,7 @@ $stats = [
 <script src="https://cdn.datatables.net/buttons/2.2.2/js/dataTables.buttons.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.bootstrap5.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.html5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
 <script>
 $(document).ready(function() {
@@ -704,6 +757,76 @@ $(document).ready(function() {
             $('#exportForm').append('<input type="hidden" name="selected_ids" value="' + selectedIds.join(',') + '">');
         }
         return true;
+    });
+
+    // Pie Chart for User Role Distribution
+    const rolePieChart = new Chart(document.getElementById('rolePieChart'), {
+        type: 'pie',
+        data: {
+            labels: <?= json_encode($role_data['labels']) ?>,
+            datasets: [{
+                data: <?= json_encode($role_data['data']) ?>,
+                backgroundColor: <?= json_encode($role_data['colors']) ?>,
+                hoverOffset: 20
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.label || '';
+                            let value = context.parsed || 0;
+                            let total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            let percentage = ((value / total) * 100).toFixed(1);
+                            return `${label}: ${value} (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Bar Chart for Active Users
+    const activityBarChart = new Chart(document.getElementById('activityBarChart'), {
+        type: 'bar',
+        data: {
+            labels: <?= json_encode($activity_labels) ?>,
+            datasets: [{
+                label: 'Active Users',
+                data: <?= json_encode($activity_data) ?>,
+                backgroundColor: '#007bff',
+                borderColor: '#0056b3',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Number of Users'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Date'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
     });
 });
 </script>

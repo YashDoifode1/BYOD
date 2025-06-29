@@ -11,27 +11,60 @@ if (!in_array($_SESSION['user_role'], ['admin', 'manager'])) {
     exit();
 }
 
-// Get dashboard statistics
+// Handle restrict/unrestrict actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_SESSION['user_role'] === 'admin') {
+    if (isset($_POST['action']) && isset($_POST['project_id'])) {
+        $project_id = (int)$_POST['project_id'];
+        $action = $_POST['action'];
+        
+        if (in_array($action, ['restrict', 'unrestrict'])) {
+            $new_status = $action === 'restrict' ? 'restricted' : 'active';
+            
+            try {
+                $stmt = $pdo->prepare("UPDATE projects SET restriction_status = ?, updated_at = NOW() WHERE id = ?");
+                $stmt->execute([$new_status, $project_id]);
+                
+                // Log the activity
+                $log_action = $action === 'restrict' ? 'project_restricted' : 'project_unrestricted';
+                $log_description = "Project was " . ($action === 'restrict' ? 'restricted' : 'unrestricted');
+                
+                $log_stmt = $pdo->prepare("INSERT INTO activity_logs (user_id, action, description, project_id) VALUES (?, ?, ?, ?)");
+                $log_stmt->execute([$_SESSION['user_id'], $log_action, $log_description, $project_id]);
+                
+                $_SESSION['success_message'] = "Project successfully " . ($action === 'restrict' ? 'restricted' : 'unrestricted');
+            } catch (PDOException $e) {
+                $_SESSION['error_message'] = "Error updating project: " . $e->getMessage();
+            }
+            
+            header("Location: " . $_SERVER['PHP_SELF']);
+            exit();
+        }
+    }
+}
+
+// Get dashboard statistics with restriction status check
 $stats = [
     'total_projects' => $pdo->query("SELECT COUNT(*) FROM projects")->fetchColumn(),
-    'active_projects' => $pdo->query("SELECT COUNT(*) FROM projects WHERE end_date > NOW()")->fetchColumn(),
-    'total_tasks' => $pdo->query("SELECT COUNT(*) FROM tasks")->fetchColumn(),
-    'completed_tasks' => $pdo->query("SELECT COUNT(*) FROM tasks WHERE status = 'done'")->fetchColumn(),
-    'overdue_tasks' => $pdo->query("SELECT COUNT(*) FROM tasks WHERE due_date < NOW() AND status != 'done'")->fetchColumn(),
-    'team_members' => $pdo->query("SELECT COUNT(DISTINCT user_id) FROM project_members")->fetchColumn(),
+    'active_projects' => $pdo->query("SELECT COUNT(*) FROM projects WHERE end_date > NOW() AND restriction_status != 'restricted'")->fetchColumn(),
+    'restricted_projects' => $pdo->query("SELECT COUNT(*) FROM projects WHERE restriction_status = 'restricted'")->fetchColumn(),
+    'total_tasks' => $pdo->query("SELECT COUNT(*) FROM tasks t JOIN projects p ON t.project_id = p.id WHERE p.restriction_status != 'restricted'")->fetchColumn(),
+    'completed_tasks' => $pdo->query("SELECT COUNT(*) FROM tasks t JOIN projects p ON t.project_id = p.id WHERE t.status = 'done' AND p.restriction_status != 'restricted'")->fetchColumn(),
+    'overdue_tasks' => $pdo->query("SELECT COUNT(*) FROM tasks t JOIN projects p ON t.project_id = p.id WHERE t.due_date < NOW() AND t.status != 'done' AND p.restriction_status != 'restricted'")->fetchColumn(),
+    'team_members' => $pdo->query("SELECT COUNT(DISTINCT user_id) FROM project_members pm JOIN projects p ON pm.project_id = p.id WHERE p.restriction_status != 'restricted'")->fetchColumn(),
 ];
 
-// Get recent activity
+// Get recent activity (excluding restricted projects)
 $activity = $pdo->query("
     SELECT al.*, u.username, p.name as project_name 
     FROM activity_logs al
     LEFT JOIN users u ON al.user_id = u.id
     LEFT JOIN projects p ON al.project_id = p.id
+    WHERE (p.restriction_status != 'restricted' OR p.restriction_status IS NULL)
     ORDER BY al.created_at DESC 
     LIMIT 10
 ")->fetchAll(PDO::FETCH_ASSOC);
 
-// Get projects summary
+// Get projects summary (excluding restricted projects)
 $projects = $pdo->query("
     SELECT p.*, 
            COUNT(t.id) as task_count,
@@ -40,12 +73,26 @@ $projects = $pdo->query("
     FROM projects p
     LEFT JOIN tasks t ON p.id = t.project_id
     LEFT JOIN users u ON p.created_by = u.id
+    WHERE p.restriction_status != 'restricted'
     GROUP BY p.id
     ORDER BY p.end_date ASC
     LIMIT 5
 ")->fetchAll(PDO::FETCH_ASSOC);
 
-// Get tasks summary
+// Get restricted projects summary (admin only)
+$restricted_projects = [];
+if ($_SESSION['user_role'] === 'admin') {
+    $restricted_projects = $pdo->query("
+        SELECT p.*, u.username as created_by_name
+        FROM projects p
+        LEFT JOIN users u ON p.created_by = u.id
+        WHERE p.restriction_status = 'restricted'
+        ORDER BY p.updated_at DESC
+        LIMIT 5
+    ")->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// Get tasks summary (only from non-restricted projects)
 $tasks = $pdo->query("
     SELECT t.*, p.name as project_name, u.username as created_by_name
     FROM tasks t
@@ -53,6 +100,7 @@ $tasks = $pdo->query("
     JOIN users u ON t.created_by = u.id
     WHERE t.due_date BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 7 DAY)
     AND t.status != 'done'
+    AND p.restriction_status != 'restricted'
     ORDER BY t.due_date ASC
     LIMIT 5
 ")->fetchAll(PDO::FETCH_ASSOC);
@@ -84,6 +132,23 @@ $tasks = $pdo->query("
         </div>
     </div>
 </div>
+
+<!-- Display success/error messages -->
+<?php if (isset($_SESSION['success_message'])): ?>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <?= $_SESSION['success_message'] ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    <?php unset($_SESSION['success_message']); ?>
+<?php endif; ?>
+
+<?php if (isset($_SESSION['error_message'])): ?>
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <?= $_SESSION['error_message'] ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    <?php unset($_SESSION['error_message']); ?>
+<?php endif; ?>
 
 <!-- Stats Cards -->
 <div class="row mb-4">
@@ -119,6 +184,24 @@ $tasks = $pdo->query("
             </div>
         </div>
     </div>
+    <?php if ($_SESSION['user_role'] === 'admin'): ?>
+    <div class="col-xl-2 col-md-4 mb-4">
+        <div class="card border-left-danger shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-danger text-uppercase mb-1">
+                            Restricted Projects</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800"><?= $stats['restricted_projects'] ?></div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-lock fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
     <div class="col-xl-2 col-md-4 mb-4">
         <div class="card border-left-info shadow h-100 py-2">
             <div class="card-body">
@@ -167,25 +250,9 @@ $tasks = $pdo->query("
             </div>
         </div>
     </div>
-    <div class="col-xl-2 col-md-4 mb-4">
-        <div class="card border-left-secondary shadow h-100 py-2">
-            <div class="card-body">
-                <div class="row no-gutters align-items-center">
-                    <div class="col mr-2">
-                        <div class="text-xs font-weight-bold text-secondary text-uppercase mb-1">
-                            Team Members</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800"><?= $stats['team_members'] ?></div>
-                    </div>
-                    <div class="col-auto">
-                        <i class="fas fa-users fa-2x text-gray-300"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
-<!-- Projects Overview -->
+<!-- Projects Over -->
 <div class="row mb-4">
     <div class="col-lg-8">
         <div class="card shadow mb-4">
@@ -193,7 +260,7 @@ $tasks = $pdo->query("
                 <h6 class="m-0 font-weight-bold text-primary">
                     <i class="fas fa-project-diagram me-1"></i> Projects Overview
                 </h6>
-                <a href="projects/" class="btn btn-sm btn-primary">View All</a>
+                <a href="projects/" class="btn btn-sm btn-primary"> All</a>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -205,6 +272,7 @@ $tasks = $pdo->query("
                                 <th>Start Date</th>
                                 <th>End Date</th>
                                 <th>Progress</th>
+                                <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -212,13 +280,13 @@ $tasks = $pdo->query("
                             <?php foreach ($projects as $project): ?>
                             <tr>
                                 <td>
-                                    <a href="projects/view.php?id=<?= $project['id'] ?>">
+                                    <a href="view.php?id=<?= $project['id'] ?>">
                                         <?= htmlspecialchars($project['name']) ?>
                                     </a>
                                 </td>
                                 <td><?= htmlspecialchars($project['created_by_name']) ?></td>
-                                <td><?= date('M d, Y', $project['start_date']) ?></td>
-                                <td><?= date('M d, Y', $project['end_date']) ?></td>
+                                <td><?= date('M d, Y', strtotime($project['start_date'])) ?></td>
+                                <td><?= date('M d, Y', strtotime($project['end_date'])) ?></td>
                                 <td>
                                     <div class="progress">
                                         <?php $progress = $project['task_count'] > 0 ? round(($project['completed_tasks'] / $project['task_count']) * 100) : 0; ?>
@@ -233,12 +301,72 @@ $tasks = $pdo->query("
                                     </div>
                                 </td>
                                 <td>
+                                    <span class="badge bg-success">Active</span>
+                                </td>
+                                <td>
                                     <a href="view.php?id=<?= $project['id'] ?>" class="btn btn-sm btn-info">
                                         <i class="fas fa-eye"></i>
                                     </a>
+                                    <?php if ($_SESSION['user_role'] === 'admin'): ?>
+                                        <form method="POST" action="" style="display: inline;">
+                                            <input type="hidden" name="project_id" value="<?= $project['id'] ?>">
+                                            <input type="hidden" name="action" value="restrict">
+                                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to restrict this project?')">
+                                                <i class="fas fa-lock"></i>
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
+                            
+                            <?php if ($_SESSION['user_role'] === 'admin' && !empty($restricted_projects)): ?>
+                                <?php foreach ($restricted_projects as $project): ?>
+                                <tr class="table-danger">
+                                    <td>
+                                        <a href="view.php?id=<?= $project['id'] ?>" class="text-danger">
+                                            <i class="fas fa-lock me-1"></i><?= htmlspecialchars($project['name']) ?>
+                                        </a>
+                                    </td>
+                                    <td><?= htmlspecialchars($project['created_by_name']) ?></td>
+                                    <td><?= date('M d, Y', strtotime($project['start_date'])) ?></td>
+                                    <td><?= date('M d, Y', strtotime($project['end_date'])) ?></td>
+                                    <td>
+                                        <?php 
+                                        // Get progress for restricted projects
+                                        $task_count = $pdo->query("SELECT COUNT(*) FROM tasks WHERE project_id = {$project['id']}")->fetchColumn();
+                                        $completed_tasks = $pdo->query("SELECT COUNT(*) FROM tasks WHERE project_id = {$project['id']} AND status = 'done'")->fetchColumn();
+                                        $progress = $task_count > 0 ? round(($completed_tasks / $task_count) * 100) : 0;
+                                        ?>
+                                        <div class="progress">
+                                            <div class="progress-bar bg-secondary" 
+                                                 role="progressbar" 
+                                                 style="width: <?= $progress ?>%" 
+                                                 aria-valuenow="<?= $progress ?>" 
+                                                 aria-valuemin="0" 
+                                                 aria-valuemax="100">
+                                                <?= $progress ?>%
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-danger">Restricted</span>
+                                    </td>
+                                    <td>
+                                        <a href="view.php?id=<?= $project['id'] ?>" class="btn btn-sm btn-danger">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        <form method="POST" action="" style="display: inline;">
+                                            <input type="hidden" name="project_id" value="<?= $project['id'] ?>">
+                                            <input type="hidden" name="action" value="unrestrict">
+                                            <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Are you sure you want to unrestrict this project?')">
+                                                <i class="fas fa-unlock"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -353,6 +481,12 @@ $tasks = $pdo->query("
                             <input class="form-check-input" type="checkbox" name="data[]" value="activity" checked>
                             <label class="form-check-label">Activity</label>
                         </div>
+                        <?php if ($_SESSION['user_role'] === 'admin'): ?>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="data[]" value="restricted">
+                            <label class="form-check-label">Include Restricted Projects</label>
+                        </div>
+                        <?php endif; ?>
                     </div>
                 </form>
             </div>

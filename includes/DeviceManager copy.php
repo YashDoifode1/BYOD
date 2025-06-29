@@ -227,7 +227,6 @@ class DeviceManager {
 
         // Get client IP address
         $ipAddress = $this->getClientIp();
-        $_SESSION['ip']= $ipAddress;
         
         // Check if user has exceeded maximum devices
         $deviceCount = $this->getDeviceCount($userId);
@@ -313,80 +312,6 @@ class DeviceManager {
             ])->rowCount() > 0;
         }
 
-        return false;
-    }
-
-    /**
-     * Gets the client's IP address with fallback to public IP services
-     * @return string
-     */
-    private function getClientIp(): string {
-        $ip = 'unknown';
-        
-        // First try the normal methods
-        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-            $ip = $_SERVER['HTTP_CLIENT_IP'];
-        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
-        } elseif (!empty($_SERVER['REMOTE_ADDR'])) {
-            $ip = $_SERVER['REMOTE_ADDR'];
-        }
-        
-        // Handle multiple IPs in X_FORWARDED_FOR
-        if (strpos($ip, ',') !== false) {
-            $ips = explode(',', $ip);
-            $ip = trim($ips[0]);
-        }
-        
-        // If we got a localhost IP (127.0.0.1 or ::1), try to get public IP from external service
-        if ($ip === '127.0.0.1' || $ip === '::1') {
-            try {
-                $publicIp = $this->getPublicIpFromExternalService();
-                if ($publicIp !== false) {
-                    $ip = $publicIp;
-                }
-            } catch (Exception $e) {
-                // Log error if needed
-                error_log("Failed to get public IP: " . $e->getMessage());
-            }
-        }
-        
-        return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : 'unknown';
-    }
-
-    /**
-     * Gets public IP from external services
-     * @return string|false
-     */
-    private function getPublicIpFromExternalService(): string|false {
-        $urls = [
-            'https://api.ipify.org?format=json',
-            'https://ipinfo.io/json',
-            'http://ip-api.com/json'
-        ];
-        
-        foreach ($urls as $url) {
-            try {
-                $options = [
-                    'http' => [
-                        'timeout' => 2, // 2 second timeout
-                        'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36\r\n"
-                    ]
-                ];
-                $context = stream_context_create($options);
-                
-                $response = file_get_contents($url, false, $context);
-                if ($response !== false) {
-                    $data = json_decode($response, true);
-                    if (isset($data['ip'])) {
-                        return $data['ip'];
-                    }
-                }
-            } catch (Exception $e) {
-                continue; // Try next service if this one fails
-            }
-        }
-        
         return false;
     }
 
@@ -494,6 +419,30 @@ class DeviceManager {
         }
 
         return $result;
+    }
+
+    /**
+     * Gets the client's IP address
+     * @return string
+     */
+    private function getClientIp(): string {
+        $ip = 'unknown';
+        
+        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
+            $ip = $_SERVER['HTTP_CLIENT_IP'];
+        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+        } elseif (!empty($_SERVER['REMOTE_ADDR'])) {
+            $ip = $_SERVER['REMOTE_ADDR'];
+        }
+        
+        // Handle multiple IPs in X_FORWARDED_FOR
+        if (strpos($ip, ',') !== false) {
+            $ips = explode(',', $ip);
+            $ip = trim($ips[0]);
+        }
+        
+        return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : 'unknown';
     }
 
     /**

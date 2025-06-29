@@ -432,11 +432,11 @@ function getRiskLevel($score) {
                                 <div class="space-y-3">
                                     <div>
                                         <p class="text-xs text-gray-500">IP Address</p>
-                                        <p class="text-sm font-medium"><?= htmlspecialchars($_SERVER['REMOTE_ADDR']) ?></p>
+                                        <p class="text-sm font-medium"><?= htmlspecialchars($_SESSION['ip']) ?></p>
                                     </div>
                                     <div>
                                         <p class="text-xs text-gray-500">Session Started</p>
-                                        <p class="text-sm font-medium"><?= date('M j, g:i a', strtotime($_SESSION['login_time'])) ?></p>
+                                        <p class="text-sm font-medium"><?= date('M j, g:i a', strtotime($_SESSION['device_fingerprint'])) ?><br><br>SESSION HASH</p><?php echo $_SESSION['device_fingerprint'];?>
                                     </div>
                                 </div>
                             </div>

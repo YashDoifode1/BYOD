@@ -407,17 +407,18 @@ function renderTaskCard($task) {
                     <?php
                     // Get task statistics
                     $stmt = $pdo->prepare("SELECT 
-                        SUM(CASE WHEN status = 'todo' THEN 1 ELSE 0 END) as todo_count,
-                        SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress_count,
-                        SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done_count,
-                        COUNT(*) as total_count
-                        FROM tasks 
-                        WHERE project_id IN (
-                            SELECT project_id 
-                            FROM project_members 
-                            WHERE user_id = :user_id
-                        )");
-                    $stmt->execute([':user_id' => $_SESSION['user_id']]);
+    SUM(CASE WHEN t.status = 'todo' AND p.restriction_status != 'restricted' THEN 1 ELSE 0 END) as todo_count,
+    SUM(CASE WHEN t.status = 'in_progress' AND p.restriction_status != 'restricted' THEN 1 ELSE 0 END) as in_progress_count,
+    SUM(CASE WHEN t.status = 'done' AND p.restriction_status != 'restricted' THEN 1 ELSE 0 END) as done_count,
+    SUM(CASE WHEN p.restriction_status != 'restricted' THEN 1 ELSE 0 END) as total_count
+    FROM tasks t
+    JOIN projects p ON t.project_id = p.id
+    WHERE t.project_id IN (
+        SELECT project_id 
+        FROM project_members 
+        WHERE user_id = :user_id
+    )");
+$stmt->execute([':user_id' => $_SESSION['user_id']]);
                     $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                     
                     $total = $stats['total_count'] ?: 1;
@@ -548,17 +549,19 @@ function renderTaskCard($task) {
                         <div class="kanban-column-content" id="todo-column">
                             <?php
                             $stmt = $pdo->prepare("SELECT t.*, u.first_name, u.last_name 
-                                                  FROM tasks t 
-                                                  LEFT JOIN users u ON t.created_by = u.id
-                                                  LEFT JOIN task_assignments ta ON t.id = ta.task_id
-                                                  WHERE t.status = 'todo'
-                                                  AND t.project_id IN (
-                                                      SELECT project_id 
-                                                      FROM project_members 
-                                                      WHERE user_id = :user_id
-                                                  )
-                                                  ORDER BY t.priority DESC, t.due_date ASC");
-                            $stmt->execute([':user_id' => $_SESSION['user_id']]);
+                      FROM tasks t 
+                      LEFT JOIN users u ON t.created_by = u.id
+                      LEFT JOIN task_assignments ta ON t.id = ta.task_id
+                      JOIN projects p ON t.project_id = p.id
+                      WHERE t.status = 'todo'
+                      AND p.restriction_status != 'restricted'
+                      AND t.project_id IN (
+                          SELECT project_id 
+                          FROM project_members 
+                          WHERE user_id = :user_id
+                      )
+                      ORDER BY t.priority DESC, t.due_date ASC");
+                       $stmt->execute([':user_id' => $_SESSION['user_id']]);
                             while ($task = $stmt->fetch(PDO::FETCH_ASSOC)) {
                                 echo renderTaskCard($task);
                             }
@@ -574,18 +577,20 @@ function renderTaskCard($task) {
                         </div>
                         <div class="kanban-column-content" id="in-progress-column">
                             <?php
-                            $stmt = $pdo->prepare("SELECT t.*, u.first_name, u.last_name 
-                                                  FROM tasks t 
-                                                  LEFT JOIN users u ON t.created_by = u.id
-                                                  LEFT JOIN task_assignments ta ON t.id = ta.task_id
-                                                  WHERE t.status = 'in_progress'
-                                                  AND t.project_id IN (
-                                                      SELECT project_id 
-                                                      FROM project_members 
-                                                      WHERE user_id = :user_id
-                                                  )
-                                                  ORDER BY t.priority DESC, t.due_date ASC");
-                            $stmt->execute([':user_id' => $_SESSION['user_id']]);
+                           $stmt = $pdo->prepare("SELECT t.*, u.first_name, u.last_name 
+                      FROM tasks t 
+                      LEFT JOIN users u ON t.created_by = u.id
+                      LEFT JOIN task_assignments ta ON t.id = ta.task_id
+                      JOIN projects p ON t.project_id = p.id
+                      WHERE t.status = 'in_progress'
+                      AND p.restriction_status != 'restricted'
+                      AND t.project_id IN (
+                          SELECT project_id 
+                          FROM project_members 
+                          WHERE user_id = :user_id
+                      )
+                      ORDER BY t.priority DESC, t.due_date ASC");
+ $stmt->execute([':user_id' => $_SESSION['user_id']]);
                             while ($task = $stmt->fetch(PDO::FETCH_ASSOC)) {
                                 echo renderTaskCard($task);
                             }
@@ -602,16 +607,18 @@ function renderTaskCard($task) {
                         <div class="kanban-column-content" id="done-column">
                             <?php
                             $stmt = $pdo->prepare("SELECT t.*, u.first_name, u.last_name 
-                                                  FROM tasks t 
-                                                  LEFT JOIN users u ON t.created_by = u.id
-                                                  LEFT JOIN task_assignments ta ON t.id = ta.task_id
-                                                  WHERE t.status = 'done'
-                                                  AND t.project_id IN (
-                                                      SELECT project_id 
-                                                      FROM project_members 
-                                                      WHERE user_id = :user_id
-                                                  )
-                                                  ORDER BY t.updated_at DESC");
+                      FROM tasks t 
+                      LEFT JOIN users u ON t.created_by = u.id
+                      LEFT JOIN task_assignments ta ON t.id = ta.task_id
+                      JOIN projects p ON t.project_id = p.id
+                      WHERE t.status = 'done'
+                      AND p.restriction_status != 'restricted'
+                      AND t.project_id IN (
+                          SELECT project_id 
+                          FROM project_members 
+                          WHERE user_id = :user_id
+                      )
+                      ORDER BY t.updated_at DESC");
                             $stmt->execute([':user_id' => $_SESSION['user_id']]);
                             while ($task = $stmt->fetch(PDO::FETCH_ASSOC)) {
                                 echo renderTaskCard($task);
@@ -666,10 +673,11 @@ function renderTaskCard($task) {
                                                 <option value="">Select Project</option>
                                                 <?php
                                                 $stmt = $pdo->prepare("SELECT p.id, p.name 
-                                                                      FROM projects p
-                                                                      JOIN project_members pm ON p.id = pm.project_id
-                                                                      WHERE pm.user_id = :user_id
-                                                                      ORDER BY p.name");
+                      FROM projects p
+                      JOIN project_members pm ON p.id = pm.project_id
+                      WHERE pm.user_id = :user_id
+                      AND p.restriction_status != 'restricted'
+                      ORDER BY p.name");
                                                 $stmt->execute([':user_id' => $_SESSION['user_id']]);
                                                 while ($project = $stmt->fetch(PDO::FETCH_ASSOC)) {
                                                     echo "<option value='{$project['id']}'>{$project['name']}</option>";

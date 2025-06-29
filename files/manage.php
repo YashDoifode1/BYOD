@@ -4,9 +4,10 @@
  *
  * Handles file uploads, displays project files, and manages file deletions
  * for authorized users within a specific project with role-based and permission-based access control.
+ * Now includes restriction_status checks to prevent access to restricted projects.
  *
  * @author Your Name
- * @version 2.1.0
+ * @version 2.2.0
  */
 
 session_start();
@@ -36,25 +37,31 @@ try {
     // Store user's project role
     $user_project_role = $member['role'];
 
-    // Fetch project details
-    $project_stmt = $pdo->prepare("SELECT * FROM projects WHERE id = ?");
+    // Fetch project details with restriction_status check
+    $project_stmt = $pdo->prepare("SELECT * FROM projects WHERE id = ? AND restriction_status != 'restricted'");
     $project_stmt->execute([$project_id]);
     $project = $project_stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$project) {
         http_response_code(404);
-        die("Project not found");
+        die("Project not found or access restricted");
     }
 
     // Handle file upload
     $upload_errors = [];
     $upload_success = false;
+    $disable_upload = false;
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Handle file upload
         if (isset($_FILES['file'])) {
+            // Check if project is restricted (additional safeguard)
+            if ($project['restriction_status'] === 'restricted') {
+                $upload_errors[] = "Cannot upload files to a restricted project";
+                $disable_upload = true;
+            }
             // CSRF protection
-            if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+            elseif (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
                 $upload_errors[] = "Invalid CSRF token";
             } else {
                 $file = $_FILES['file'];
@@ -184,7 +191,10 @@ try {
         }
         // Handle permission updates
         elseif (isset($_POST['update_permissions'])) {
-            if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+            if ($project['restriction_status'] === 'restricted') {
+                $upload_errors[] = "Cannot modify permissions in a restricted project";
+            }
+            elseif (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
                 $upload_errors[] = "Invalid CSRF token";
             } else {
                 $file_id = filter_input(INPUT_POST, 'file_id', FILTER_VALIDATE_INT);
@@ -279,7 +289,7 @@ try {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
 
-    // Fetch project files with permissions info
+    // Fetch project files with permissions info (only from non-restricted projects)
     $files_stmt = $pdo->prepare("
         SELECT f.*, u.username, u.first_name, u.last_name,
                MAX(fp.can_view) as can_view, 
@@ -287,21 +297,25 @@ try {
                MAX(fp.can_delete) as can_delete,
                (f.uploaded_by = ?) as is_uploader
         FROM files f 
+        JOIN projects p ON f.project_id = p.id
         JOIN users u ON f.uploaded_by = u.id 
         LEFT JOIN file_permissions fp ON (f.id = fp.file_id AND fp.user_id = ?)
         WHERE f.project_id = ? 
+        AND p.restriction_status != 'restricted'
         GROUP BY f.id
         ORDER BY f.uploaded_at DESC
     ");
     $files_stmt->execute([$_SESSION['user_id'], $_SESSION['user_id'], $project_id]);
     $files = $files_stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Fetch project members for permission assignment
+    // Fetch project members for permission assignment (only from non-restricted projects)
     $members_stmt = $pdo->prepare("
         SELECT u.id, u.username, u.first_name, u.last_name 
         FROM project_members pm
         JOIN users u ON pm.user_id = u.id
+        JOIN projects p ON pm.project_id = p.id
         WHERE pm.project_id = ?
+        AND p.restriction_status != 'restricted'
     ");
     $members_stmt->execute([$project_id]);
     $members = $members_stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -447,6 +461,7 @@ function has_permission($file, $action, $user_project_role, $session_role) {
         <h1 class="text-2xl font-bold mb-6 text-gray-800">File Manager: <?= htmlspecialchars($project['name']) ?></h1>
 
         <!-- File Upload Form -->
+        <?php if (!$disable_upload): ?>
         <div class="bg-white p-6 rounded-lg shadow mb-6">
             <h2 class="text-lg font-semibold mb-4 text-gray-700">Upload New File</h2>
             <?php if (!empty($upload_errors)): ?>
@@ -474,6 +489,12 @@ function has_permission($file, $action, $user_project_role, $session_role) {
                 </div>
             </form>
         </div>
+        <?php else: ?>
+            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
+                <p class="font-bold">Restricted Project</p>
+                <p>This project has been restricted. File operations are not permitted.</p>
+            </div>
+        <?php endif; ?>
 
         <!-- File List -->
         <div class="bg-white p-6 rounded-lg shadow">
